@@ -41,6 +41,17 @@ function AppContent() {
   const [showNewTask, setShowNewTask] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
 
+  // Force cards on small screens
+  const [isMobile, setIsMobile] = useState(false);
+  React.useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+
+  const effectiveView = isMobile ? 'cards' : viewMode;
+
   const { data: sessions = [], isLoading: sessLoading, error: sessError } = useSessions();
   const { data: tasks = [], isLoading: tasksLoading, error: tasksError } = useTasks(
     selectedStatus ? { status: selectedStatus } : undefined
@@ -232,7 +243,7 @@ function AppContent() {
               </button>
             )}
           </div>
-        ) : viewMode === 'table' ? (
+        ) : effectiveView === 'table' ? (
           <TaskTable
             tasks={normalizedTasks}
             sessionTitles={sessionTitles}
@@ -247,7 +258,6 @@ function AppContent() {
               <TaskCard
                 key={t._id}
                 task={t}
-                session={sessionMap[t.sessionIdStr]}
                 onDelete={handleDelete}
                 onSkip={handleSkip}
                 onResume={handleResume}
