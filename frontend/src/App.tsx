@@ -16,6 +16,15 @@ import { TaskCard } from './components/TaskCard';
 import { TaskDetailModal } from './components/TaskDetailModal';
 import { NewSessionModal } from './components/NewSessionModal';
 import { NewTaskModal } from './components/NewTaskModal';
+import type { AgentType } from './types';
+
+const AGENTS: { id: AgentType; label: string; emoji: string }[] = [
+  { id: 'hermes', label: 'Hermes', emoji: '⚡' },
+  { id: 'vibe', label: 'Vibe', emoji: '✨' },
+  { id: 'claude', label: 'Claude', emoji: '🤖' },
+  { id: 'opencode', label: 'OpenCode', emoji: '💻' },
+  { id: 'antigravity', label: 'Antigravity', emoji: '🚀' },
+];
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -47,6 +56,15 @@ function AppContent() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [burgerOpen, setBurgerOpen] = useState(false);
 
+  // Quick-add task bar (visible when a project is selected)
+  const [quickPrompt, setQuickPrompt] = useState('');
+  const [quickAgent, setQuickAgent] = useState<AgentType>('hermes');
+  const [quickAgentOpen, setQuickAgentOpen] = useState(false);
+  const quickAgentRef = useRef<HTMLDivElement>(null);
+  const quickInputRef = useRef<HTMLInputElement>(null);
+  const tasksContainerRef = useRef<HTMLDivElement>(null);
+  const prevSelectedDirectory = useRef('');
+
   // Close burger on outside click
   const burgerRef = useRef<HTMLDivElement>(null);
   useReactEffect(() => {
@@ -59,6 +77,18 @@ function AppContent() {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [burgerOpen]);
+
+  // Close quick agent dropdown on outside click
+  useReactEffect(() => {
+    if (!quickAgentOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (quickAgentRef.current && !quickAgentRef.current.contains(e.target as Node)) {
+        setQuickAgentOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [quickAgentOpen]);
 
   // Force cards on small screens
   const [isMobile, setIsMobile] = useState(false);
@@ -98,6 +128,13 @@ function AppContent() {
     return m;
   }, [sessions]);
 
+  // Find the session ID matching the selected directory
+  const selectedSessionId = useMemo(() => {
+    if (!selectedDirectory) return '';
+    const found = sessions.find(s => s.directory === selectedDirectory);
+    return found?._id ?? '';
+  }, [sessions, selectedDirectory]);
+
   // Normalize + filter by directory + filter by status group
   const normalizedTasks = useMemo(() => {
     return tasks
@@ -117,10 +154,33 @@ function AppContent() {
       });
   }, [tasks, selectedDirectory, selectedFilter, sessionMap]);
 
+  // Scroll to bottom when project changes or task count changes (thread-like behavior)
+  const scrollToBottom = () => {
+    requestAnimationFrame(() => {
+      if (tasksContainerRef.current) {
+        tasksContainerRef.current.scrollTop = tasksContainerRef.current.scrollHeight;
+      }
+    });
+  };
+  useReactEffect(() => {
+    if (prevSelectedDirectory.current !== selectedDirectory && selectedDirectory) {
+      prevSelectedDirectory.current = selectedDirectory;
+      scrollToBottom();
+    } else {
+      prevSelectedDirectory.current = selectedDirectory;
+    }
+  }, [selectedDirectory, normalizedTasks.length]);
+
   const handleDelete = (id: string) => { if (confirm('Supprimer cette tâche ?')) deleteTask.mutate(id); };
   const handleSkip = (id: string) => skipTask.mutate(id);
   const handleResume = (id: string) => resumeTask.mutate(id);
   const handleViewTask = (task: Task) => setSelectedTask(task);
+
+  const handleQuickSend = () => {
+    if (!selectedSessionId || !quickPrompt.trim()) return;
+    createTask.mutate({ sessionId: selectedSessionId, prompt: quickPrompt.trim(), agent: quickAgent });
+    setQuickPrompt('');
+  };
 
   if (sessLoading || tasksLoading) {
     return (
@@ -149,9 +209,9 @@ function AppContent() {
     : 'Tous les projets';
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50">
+    <div className="flex flex-col h-screen overflow-hidden bg-gradient-to-br from-slate-50 via-white to-indigo-50">
       {/* ── Header ───────────────────────────────────── */}
-      <header className="sticky top-0 z-40 border-b border-slate-200/40 bg-white/80 backdrop-blur-xl shadow-sm shadow-slate-200/20">
+      <header className="shrink-0 z-40 border-b border-slate-200/40 bg-white/80 backdrop-blur-xl shadow-sm shadow-slate-200/20">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 py-2.5 gap-3">
           {/* Left: logo + burger menu */}
           <div className="flex items-center gap-2 shrink-0 min-w-0">
@@ -160,10 +220,12 @@ function AppContent() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
             </div>
-            <h1 className="text-base font-bold tracking-tight hidden sm:block">
+            <h1 className="text-base font-bold tracking-tight truncate max-w-[160px] sm:max-w-none">
               <span className="bg-gradient-to-r from-violet-600 to-indigo-600 bg-clip-text text-transparent">cockpit</span>
               <span className="text-slate-400">AI</span>
             </h1>
+            {/* Project name — always visible */}
+            <span className="text-sm text-slate-500 truncate max-w-[120px] sm:max-w-xs sm:hidden">· {currentTitle}</span>
 
             {/* Burger menu */}
             <div className="relative ml-2" ref={burgerRef}>
@@ -262,28 +324,35 @@ function AppContent() {
               </button>
             </div>
 
-            {/* New task button */}
-            <button
-              onClick={() => setShowNewTask(true)}
-              className="group flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-violet-500 to-indigo-600 px-3 py-1.5 text-sm font-medium text-white shadow-md shadow-indigo-200/50 transition-all hover:shadow-lg hover:shadow-indigo-300/50 hover:scale-[1.02] active:scale-[0.98]"
-            >
-              <svg className="h-3.5 w-3.5 transition-transform group-hover:scale-110" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-              </svg>
-              <span className="hidden sm:inline">Nouvelle tâche</span>
-            </button>
+            {/* New task button — only when all projects */}
+            {!selectedDirectory && (
+              <button
+                onClick={() => setShowNewTask(true)}
+                className="group flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-violet-500 to-indigo-600 px-3 py-1.5 text-sm font-medium text-white shadow-md shadow-indigo-200/50 transition-all hover:shadow-lg hover:shadow-indigo-300/50 hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <svg className="h-3.5 w-3.5 transition-transform group-hover:scale-110" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                </svg>
+                <span className="hidden sm:inline">Nouvelle tâche</span>
+              </button>
+            )}
           </div>
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-6 py-5">
-        {/* ── Filters (status pills only) ──────────── */}
-        <FilterBar
-          selectedFilter={selectedFilter}
-          onFilterChange={setSelectedFilter}
-        />
+      <main ref={tasksContainerRef} className="flex-1 overflow-y-auto w-full">
+        {/* ── Sticky FilterBar ─────────── */}
+        <div className="sticky top-0 z-30 bg-gradient-to-br from-slate-50 via-white to-indigo-50 px-4 pt-3 pb-2">
+          <div className="mx-auto max-w-7xl">
+            <FilterBar
+              selectedFilter={selectedFilter}
+              onFilterChange={setSelectedFilter}
+            />
+          </div>
+        </div>
 
         {/* ── Content ──────────────────────────────── */}
+        <div className="mx-auto max-w-7xl px-4 pb-24">
         {normalizedTasks.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20">
             <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-50 to-violet-50 text-indigo-400 shadow-inner">
@@ -307,7 +376,7 @@ function AppContent() {
                 </svg>
                 Créer un projet
               </button>
-            ) : (
+            ) : !selectedDirectory && (
               <button
                 onClick={() => setShowNewTask(true)}
                 className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-violet-500 to-indigo-600 px-5 py-2.5 text-sm font-medium text-white shadow-lg shadow-indigo-200 transition hover:shadow-xl hover:shadow-indigo-300"
@@ -329,8 +398,8 @@ function AppContent() {
             onView={handleViewTask}
           />
         ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {normalizedTasks.map((t) => (
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {[...normalizedTasks].reverse().map((t) => (
               <TaskCard
                 key={t._id}
                 task={t}
@@ -342,7 +411,73 @@ function AppContent() {
             ))}
           </div>
         )}
+        </div>
       </main>
+
+      {/* ── Quick-add bottom bar (only when a project is selected) ──────────────── */}
+      {selectedDirectory && (
+        <div className="fixed bottom-3 left-3 right-3 sm:left-6 sm:right-6 md:left-8 md:right-8 lg:left-1/2 lg:-translate-x-1/2 lg:max-w-2xl z-50 rounded-2xl border border-slate-200/60 bg-white/90 backdrop-blur-xl shadow-lg shadow-slate-300/30">
+          <div className="px-4 py-3">
+            <div className="flex items-center gap-2">
+              {/* Agent selector */}
+              <div className="relative shrink-0" ref={quickAgentRef}>
+                <button
+                  onClick={() => setQuickAgentOpen(!quickAgentOpen)}
+                  className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition-all hover:border-indigo-300 hover:text-indigo-600"
+                >
+                  <span>{AGENTS.find(a => a.id === quickAgent)?.emoji}</span>
+                  <span className="hidden sm:inline">{AGENTS.find(a => a.id === quickAgent)?.label}</span>
+                  <svg className="h-3 w-3 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                  </svg>
+                </button>
+                {quickAgentOpen && (
+                  <div className="absolute bottom-full left-0 mb-2 w-48 rounded-xl border border-slate-200 bg-white shadow-xl shadow-slate-200/40 overflow-hidden z-50">
+                    <div className="py-1">
+                      {AGENTS.map((a) => (
+                        <button
+                          key={a.id}
+                          onClick={() => { setQuickAgent(a.id); setQuickAgentOpen(false); }}
+                          className={`w-full flex items-center gap-2 px-3 py-2 text-sm transition-colors ${
+                            quickAgent === a.id
+                              ? 'bg-indigo-50 text-indigo-700 font-medium'
+                              : 'text-slate-700 hover:bg-slate-50'
+                          }`}
+                        >
+                          <span>{a.emoji}</span>
+                          <span>{a.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Prompt input */}
+              <input
+                ref={quickInputRef}
+                type="text"
+                value={quickPrompt}
+                onChange={(e) => setQuickPrompt(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && quickPrompt.trim()) handleQuickSend(); }}
+                placeholder="Décrivez la tâche…"
+                className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm transition focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+              />
+
+              {/* Send button */}
+              <button
+                onClick={handleQuickSend}
+                disabled={!quickPrompt.trim()}
+                className="rounded-lg bg-gradient-to-r from-violet-500 to-indigo-600 p-2 text-white shadow-sm transition hover:shadow-md disabled:opacity-30 active:scale-95"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Modals ─────────────────────────────────── */}
       {showNewSession && (
