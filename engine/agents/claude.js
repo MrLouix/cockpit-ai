@@ -1,13 +1,10 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import { spawn } from 'node:child_process';
+import fs from 'node:fs';
 import { getAgent } from '../config/agents.js';
-
-const execFileAsync = promisify(execFile);
-const MAX_BUFFER = 50 * 1024 * 1024; // 50 MB
 
 /**
  * Wrapper Claude — lance `claude -p` avec le prompt en argument.
- * Utilise execFileAsync pour éviter les problèmes de stdin.
+ * Utilise spawn avec stdin redirigé vers /dev/null pour éviter l'attente de 3s.
  */
 export async function run(prompt, timeout) {
   const cfg = getAgent('claude');
@@ -20,21 +17,45 @@ export async function run(prompt, timeout) {
   const args = [...cfg.args, ...outputArgs, prompt];
   const ms = timeout ?? cfg.timeout;
 
-  try {
-    const { stdout, stderr } = await execFileAsync(cfg.command, args, {
+  return new Promise((resolve) => {
+    // Open /dev/null for stdin to prevent "no stdin data received" warning
+    const nullFd = fs.openSync('/dev/null', 'r');
+    
+    const child = spawn(cfg.command, args, {
+      stdio: [nullFd, 'pipe', 'pipe'],
       timeout: ms,
-      maxBuffer: MAX_BUFFER,
       killSignal: 'SIGTERM',
     });
 
-    const rawOutput = stdout.trim();
-    return parseResult(rawOutput, stderr.trim(), cfg.outputFmt);
-  } catch (err) {
-    if (err.code === 'ETIMEDOUT' || err.killed) {
-      return { success: false, error: `Agent timed out after ${ms}ms` };
-    }
-    return { success: false, error: err.message || String(err) };
-  }
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (data) => { stdout += data; });
+    child.stderr.on('data', (data) => { stderr += data; });
+
+    child.on('close', (code) => {
+      fs.closeSync(nullFd);
+      const rawOutput = stdout.trim();
+      const stderrTrimmed = stderr.trim();
+      
+      if (code === 0) {
+        resolve(parseResult(rawOutput, stderrTrimmed, cfg.outputFmt));
+      } else {
+        resolve({ success: false, error: stderrTrimmed || `Process exited with code ${code}` });
+      }
+    });
+
+    child.on('error', (err) => {
+      fs.closeSync(nullFd);
+      resolve({ success: false, error: err.message || String(err) });
+    });
+
+    child.on('timeout', () => {
+      child.kill('SIGTERM');
+      fs.closeSync(nullFd);
+      resolve({ success: false, error: `Agent timed out after ${ms}ms` });
+    });
+  });
 }
 
 /** Parse the agent output based on the configured format. */
