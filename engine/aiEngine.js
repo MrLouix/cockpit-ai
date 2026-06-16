@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
+import express from 'express';
 import { Task } from './models/Task.js';
 import { runAgent, detectSubtasks } from './agents/index.js';
 
@@ -7,23 +8,50 @@ dotenv.config();
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/aiquerymanager';
 const POLL_INTERVAL = parseInt(process.env.POLL_INTERVAL, 10) || 5000;
+const ENGINE_PORT = parseInt(process.env.ENGINE_PORT, 10) || 3332;
 
-/**
- * Process a pending task: set running, execute agent, save result.
- * @param {Object} task - Mongoose document
- */
+let isMongoConnected = false;
+let currentTaskId = null;
+let startedAt = Date.now();
+let tasksProcessed = 0;
+
+/* ── Express health server ────────────────────────────────── */
+const app = express();
+
+app.get('/api/engine/health', async (_req, res) => {
+  try {
+    const mongoStatus = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
+    const pendingCount = await Task.countDocuments({ status: 'pending' });
+    const runningCount = await Task.countDocuments({ status: 'running' });
+
+    res.json({
+      status: 'ok',
+      uptime: Date.now() - startedAt,
+      mongodb: mongoStatus,
+      queue: { pending: pendingCount, running: runningCount },
+      currentTask: currentTaskId,
+      tasksProcessed,
+    });
+  } catch (err) {
+    res.status(500).json({ status: 'error', error: err.message });
+  }
+});
+
+app.listen(ENGINE_PORT, () => {
+  console.log(`[ENGINE] Health server on http://localhost:${ENGINE_PORT}`);
+});
+
+/* ── Agent execution ─────────────────────────────────────── */
 async function processTask(task) {
   console.log(`[ENGINE] Processing task ${task._id} with agent '${task.agent}'...`);
+  currentTaskId = task._id;
 
-  // Set status to running
   task.status = 'running';
   task.updatedAt = new Date();
   await task.save();
 
-  // Run the agent
   const result = await runAgent(task.agent, task.prompt);
 
-  // Update task with results
   task.executedByAgent = task.agent;
   task.updatedAt = new Date();
 
@@ -32,11 +60,9 @@ async function processTask(task) {
     task.status = 'success';
     task.endDate = new Date();
 
-    // Check for subtasks in the response — Sprint 5 detection
     const subtasks = detectSubtasks(result.result);
     if (subtasks) {
       console.log(`[ENGINE] Detected ${subtasks.length} subtasks for task ${task._id}`);
-      // Add subtask objects to the embedded array
       for (const stPrompt of subtasks) {
         task.subtasks.push({
           prompt: stPrompt,
@@ -52,14 +78,12 @@ async function processTask(task) {
     task.endDate = new Date();
   }
 
+  tasksProcessed++;
+  currentTaskId = null;
   await task.save();
   console.log(`[ENGINE] Task ${task._id} → ${task.status}`);
 }
 
-/**
- * Process subtasks for a task that has pending subtasks.
- * @param {Object} task - Mongoose document with subtasks
- */
 async function processSubtasks(task) {
   if (!task.subtasks || task.subtasks.length === 0) return;
 
@@ -68,7 +92,6 @@ async function processSubtasks(task) {
   );
 
   if (pendingSubtasks.length === 0) {
-    // Check if ALL subtasks are done — mark parent as success
     const allDone = task.subtasks.every(
       (st) => st.status === 'success' || st.status === 'skipped' || st.status === 'failed'
     );
@@ -86,12 +109,10 @@ async function processSubtasks(task) {
   for (const subtask of pendingSubtasks) {
     console.log(`[ENGINE] Subtask: "${subtask.prompt?.slice(0, 60)}..."`);
 
-    // Set subtask running
     subtask.status = 'running';
     task.updatedAt = new Date();
     await task.save();
 
-    // Run agent on subtask with the SAME agent as the parent
     const result = await runAgent(task.agent, subtask.prompt);
 
     if (result.success) {
@@ -106,23 +127,20 @@ async function processSubtasks(task) {
     subtask.endDate = new Date();
     task.updatedAt = new Date();
     await task.save();
-
     console.log(`[ENGINE] Subtask → ${subtask.status}`);
   }
 }
 
-/**
- * Main loop: poll for pending tasks and process them.
- */
+/* ── Main loop ───────────────────────────────────────────── */
 async function main() {
   console.log('[ENGINE] Connecting to MongoDB...');
   await mongoose.connect(MONGODB_URI);
+  isMongoConnected = true;
   console.log('[ENGINE] Connected to MongoDB');
 
-  // Signal handling for clean shutdown
   const shutdown = async (signal) => {
     console.log(`\n[ENGINE] Received ${signal}, shutting down...`);
-    if (mongoose.connection.readyState === 1) {
+    if (isMongoConnected && mongoose.connection.readyState === 1) {
       await mongoose.disconnect();
       console.log('[ENGINE] MongoDB disconnected');
     }
@@ -136,7 +154,6 @@ async function main() {
 
   while (true) {
     try {
-      // Find one pending task, oldest first
       const pendingTasks = await Task.find({ status: 'pending' })
         .sort({ createdAt: 1 })
         .limit(1);
@@ -145,7 +162,6 @@ async function main() {
         const task = pendingTasks[0];
         await processTask(task);
 
-        // If the task was decomposed or has subtasks, process them
         if (task.subtasks && task.subtasks.length > 0) {
           await processSubtasks(task);
         }

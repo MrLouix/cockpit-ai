@@ -8,7 +8,7 @@ import { errorHandler } from './middlewares/errorHandler.js';
 import { connectDB } from './config/db.js';
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3331;
 
 app.use(cors());
 app.use(express.json());

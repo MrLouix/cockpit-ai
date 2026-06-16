@@ -2,13 +2,13 @@
  * AI Agent CLI configurations — built from actual `--help` output.
  *
  * Installed agents (verified on this machine):
- *   • hermes  → /home/ai_agent/.local/bin/hermes  (-z for non-interactive)
- *   • vibe    → /home/ai_agent/.local/bin/vibe     (-p for programmatic mode)
- *   • claude  → /usr/bin/claude                     (-p for print mode)
+ *   • hermes   → /home/ai_agent/.local/bin/hermes   (-z for non-interactive)
+ *   • vibe     → /home/ai_agent/.local/bin/vibe      (-p for programmatic mode)
+ *   • claude   → /usr/bin/claude                    (-p for print mode)
+ *   • opencode → /home/ai_agent/.opencode/bin/opencode (run for non-interactive)
  *
  * Not installed (commented out, ready to be enabled):
  *   • antigravity (ag)
- *   • opencode
  *
  * Each agent entry defines:
  *   command   – CLI binary (resolved via PATH)
@@ -73,15 +73,18 @@ const agents = {
   //   installed: false,
   // },
 
-  // ── OpenCode (NOT installed) ──────────────────────────────────────────────
-  // Uncomment and adjust args once installed.
-  // opencode: {
-  //   command: 'opencode',
-  //   args: ['-p'],
-  //   timeout: 300_000,
-  //   outputFmt: 'text',
-  //   installed: false,
-  // },
+  // ── OpenCode ─────────────────────────────────────────────────────────────
+  // Non-interactive via `opencode run --format json "prompt"`
+  // JSON output: raw JSON events
+  // Source: opencode run --help
+  opencode: {
+    command: 'opencode',
+    args: ['run'],                 // opencode run --format json "prompt"
+    jsonArgs: ['--format', 'json'],
+    timeout: 300_000,
+    outputFmt: 'text',
+    installed: true,
+  },
 };
 
 // ---------------------------------------------------------------------------

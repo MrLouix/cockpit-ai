@@ -1,6 +1,6 @@
-import React, { useMemo, useState, useRef, useEffect as useReactEffect } from 'react';
+import { useMemo, useState, useRef, useEffect as useReactEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { Task } from './types';
+import type { Task, Session, TaskStatus } from './types';
 import {
   useSessions,
   useTasks,
@@ -16,6 +16,7 @@ import { TaskCard } from './components/TaskCard';
 import { TaskDetailModal } from './components/TaskDetailModal';
 import { NewSessionModal } from './components/NewSessionModal';
 import { NewTaskModal } from './components/NewTaskModal';
+import { LogoPunchline } from './components/LogoPunchline';
 import type { AgentType } from './types';
 
 const AGENTS: { id: AgentType; label: string; emoji: string }[] = [
@@ -112,37 +113,37 @@ function AppContent() {
 
   const directories = useMemo(() => {
     const set = new Set<string>();
-    sessions.forEach((s) => { if (s.directory) set.add(s.directory); });
+    sessions.forEach((s: Session) => { if (s.directory) set.add(s.directory); });
     return [...set].sort();
   }, [sessions]);
 
   const sessionMap = useMemo(() => {
     const m: Record<string, { _id: string; directory: string; titre: string }> = {};
-    sessions.forEach((s) => { m[s._id] = s; });
+    sessions.forEach((s: Session) => { m[s._id] = s; });
     return m;
   }, [sessions]);
 
   const sessionTitles = useMemo(() => {
     const m: Record<string, string> = {};
-    sessions.forEach((s) => { m[s._id] = s.titre || s.directory || '—'; });
+    sessions.forEach((s: Session) => { m[s._id] = s.titre || s.directory || '—'; });
     return m;
   }, [sessions]);
 
   // Find the session ID matching the selected directory
   const selectedSessionId = useMemo(() => {
     if (!selectedDirectory) return '';
-    const found = sessions.find(s => s.directory === selectedDirectory);
+    const found = sessions.find((s: Session) => s.directory === selectedDirectory);
     return found?._id ?? '';
   }, [sessions, selectedDirectory]);
 
   // Normalize + filter by directory + filter by status group
   const normalizedTasks = useMemo(() => {
     return tasks
-      .map(t => ({
+      .map((t: Task) => ({
         ...t,
         sessionIdStr: typeof t.sessionId === 'string' ? t.sessionId : (t.sessionId as any)?._id || '',
       }))
-      .filter(t => {
+      .filter((t: { sessionIdStr: string; status: TaskStatus } & Task) => {
         // Directory filter
         if (selectedDirectory) {
           const sess = sessionMap[t.sessionIdStr];
@@ -215,17 +216,13 @@ function AppContent() {
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 py-2.5 gap-3">
           {/* Left: logo + burger menu */}
           <div className="flex items-center gap-2 shrink-0 min-w-0">
-            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-gradient-to-br from-violet-500 to-indigo-600 shadow-sm shadow-indigo-200/50">
-              <svg className="h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-            </div>
+            <LogoPunchline />
             <h1 className="text-base font-bold tracking-tight truncate max-w-[160px] sm:max-w-none">
               <span className="bg-gradient-to-r from-violet-600 to-indigo-600 bg-clip-text text-transparent">cockpit</span>
               <span className="text-slate-400">AI</span>
             </h1>
             {/* Project name — always visible */}
-            <span className="text-sm text-slate-500 truncate max-w-[120px] sm:max-w-xs sm:hidden">· {currentTitle}</span>
+            <span className="text-sm text-slate-500 truncate max-w-[120px] sm:max-w-xs">· {currentTitle}</span>
 
             {/* Burger menu */}
             <div className="relative ml-2" ref={burgerRef}>
@@ -399,7 +396,7 @@ function AppContent() {
           />
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {[...normalizedTasks].reverse().map((t) => (
+            {normalizedTasks.map((t: Task & { sessionIdStr: string }) => (
               <TaskCard
                 key={t._id}
                 task={t}
