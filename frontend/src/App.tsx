@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { Task, TaskStatus } from './types';
+import type { Task } from './types';
 import {
   useSessions,
   useTasks,
@@ -26,17 +26,22 @@ const queryClient = new QueryClient({
   },
 });
 
-/* ── Status counts ────────────────────────────────── */
-function statusCounts(tasks: Task[]) {
-  const c: Record<string, number> = {};
-  tasks.forEach(t => { c[t.status] = (c[t.status] || 0) + 1; });
-  return c;
+type FilterMode = '' | 'completed' | 'pending';
+
+const COMPLETED_STATUSES = new Set(['success', 'failed']);
+const PENDING_STATUSES = new Set(['pending', 'running', 'pause', 'skipped']);
+
+function matchesFilter(status: string, filter: FilterMode): boolean {
+  if (!filter) return true;
+  if (filter === 'completed') return COMPLETED_STATUSES.has(status);
+  if (filter === 'pending') return PENDING_STATUSES.has(status);
+  return true;
 }
 
 function AppContent() {
   const [viewMode, setViewMode] = useState<'table' | 'cards'>('cards');
   const [selectedDirectory, setSelectedDirectory] = useState('');
-  const [selectedStatus, setSelectedStatus] = useState<TaskStatus | ''>('');
+  const [selectedFilter, setSelectedFilter] = useState<FilterMode>('');
   const [showNewSession, setShowNewSession] = useState(false);
   const [showNewTask, setShowNewTask] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -53,9 +58,7 @@ function AppContent() {
   const effectiveView = isMobile ? 'cards' : viewMode;
 
   const { data: sessions = [], isLoading: sessLoading, error: sessError } = useSessions();
-  const { data: tasks = [], isLoading: tasksLoading, error: tasksError } = useTasks(
-    selectedStatus ? { status: selectedStatus } : undefined
-  );
+  const { data: tasks = [], isLoading: tasksLoading, error: tasksError } = useTasks();
 
   const deleteTask = useDeleteTask();
   const skipTask = useSkipTask();
@@ -81,14 +84,31 @@ function AppContent() {
     return m;
   }, [sessions]);
 
+  // Normalize + filter by directory + filter by status group
   const normalizedTasks = useMemo(() => {
-    return tasks.map(t => ({
-      ...t,
-      sessionIdStr: typeof t.sessionId === 'string' ? t.sessionId : (t.sessionId as any)?._id || '',
-    }));
-  }, [tasks]);
+    return tasks
+      .map(t => ({
+        ...t,
+        sessionIdStr: typeof t.sessionId === 'string' ? t.sessionId : (t.sessionId as any)?._id || '',
+      }))
+      .filter(t => {
+        // Directory filter
+        if (selectedDirectory) {
+          const sess = sessionMap[t.sessionIdStr];
+          if (!sess || sess.directory !== selectedDirectory) return false;
+        }
+        // Status group filter
+        if (!matchesFilter(t.status, selectedFilter)) return false;
+        return true;
+      });
+  }, [tasks, selectedDirectory, selectedFilter, sessionMap]);
 
-  const counts = useMemo(() => statusCounts(tasks), [tasks]);
+  // Counts from ALL tasks (not filtered)
+  const allCounts = useMemo(() => {
+    const c: Record<string, number> = {};
+    tasks.forEach(t => { c[t.status] = (c[t.status] || 0) + 1; });
+    return c;
+  }, [tasks]);
 
   const handleDelete = (id: string) => { if (confirm('Supprimer cette tâche ?')) deleteTask.mutate(id); };
   const handleSkip = (id: string) => skipTask.mutate(id);
@@ -201,10 +221,10 @@ function AppContent() {
         <FilterBar
           directories={directories}
           selectedDirectory={selectedDirectory}
-          selectedStatus={selectedStatus}
-          statusCounts={counts}
+          selectedFilter={selectedFilter}
+          statusCounts={allCounts}
           onDirectoryChange={setSelectedDirectory}
-          onStatusChange={setSelectedStatus}
+          onFilterChange={setSelectedFilter}
         />
 
         {/* ── Content ──────────────────────────────── */}
