@@ -1,0 +1,15 @@
+{
+  "name": "ai-query-engine",
+  "version": "1.0.0",
+  "description": "AI Engine for AI Query Manager - Sprint 2",
+  "type": "module",
+  "main": "runEngine.js",
+  "scripts": {
+    "start": "node runEngine.js",
+    "dev": "node --watch runEngine.js"
+  },
+  "dependencies": {
+    "mongoose": "^8.15.0",
+    "dotenv": "^16.5.0"
+  }
+}

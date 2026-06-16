@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>Test cockpitAI</title>
+  <link rel="stylesheet" href="/src/index.css">
+</head>
+<body class="bg-gray-50 p-8">
+  <div id="test" class="text-xl text-gray-900">Test page loaded</div>
+  <div id="data"></div>
+  <script>
+    async function test() {
+      try {
+        const res = await fetch('/api/health');
+        const data = await res.json();
+        document.getElementById('data').innerHTML = '<p>Health OK: ' + JSON.stringify(data) + '</p>';
+      } catch(e) {
+        document.getElementById('data').innerHTML = '<p class="text-red-500">Error: ' + e.message + '</p>';
+      }
+
+      try {
+        const res = await fetch('/api/sessions');
+        const sessions = await res.json();
+        document.getElementById('data').innerHTML += '<p>Sessions: ' + JSON.stringify(sessions) + '</p>';
+      } catch(e) {
+        document.getElementById('data').innerHTML += '<p class="text-red-500">Sessions Error: ' + e.message + '</p>';
+      }
+
+      try {
+        const res = await fetch('/api/tasks');
+        const tasks = await res.json();
+        document.getElementById('data').innerHTML += '<p>Tasks: ' + JSON.stringify(tasks) + '</p>';
+      } catch(e) {
+        document.getElementById('data').innerHTML += '<p class="text-red-500">Tasks Error: ' + e.message + '</p>';
+      }
+    }
+    test();
+  </script>
+</body>
+</html>
