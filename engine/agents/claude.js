@@ -6,9 +6,8 @@ const execFileAsync = promisify(execFile);
 const MAX_BUFFER = 50 * 1024 * 1024; // 50 MB
 
 /**
- * Wrapper générique — lit la config, construit les argv, lance l'exécutable.
- * Gère les CLI qui prennent le prompt en tant qu'argument (claude) vs
- * ceux qui le prennent en trailing arg (hermes).
+ * Wrapper Claude — lance `claude -p --output-format json "prompt"`.
+ * Stdin est ignoré car Claude -p prend le prompt en argument, pas sur stdin.
  */
 export async function run(prompt, timeout) {
   const cfg = getAgent('claude');
@@ -17,7 +16,7 @@ export async function run(prompt, timeout) {
   }
 
   // Claude: claude -p --output-format {text|json} "prompt"
-  // Le prompt est le trailing arg.
+  // Prompt is a positional argument.
   const outputArgs = cfg.outputFmt === 'json' ? (cfg.jsonArgs || []) : [];
   const args = [...cfg.args, ...outputArgs, prompt];
   const ms = timeout ?? cfg.timeout;
@@ -27,6 +26,7 @@ export async function run(prompt, timeout) {
       timeout: ms,
       maxBuffer: MAX_BUFFER,
       killSignal: 'SIGTERM',
+      stdio: ['ignore', 'pipe', 'pipe'], // ignore stdin — claude -p takes prompt as arg
     });
 
     const rawOutput = stdout.trim();

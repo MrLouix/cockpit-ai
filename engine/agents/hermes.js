@@ -5,6 +5,10 @@ import { getAgent } from '../config/agents.js';
 const execFileAsync = promisify(execFile);
 const MAX_BUFFER = 50 * 1024 * 1024; // 50 MB
 
+/**
+ * Wrapper Hermes — lance `hermes -z "prompt"`.
+ * Stdin est ignoré car Hermes ne lit pas stdin en mode -z.
+ */
 export async function run(prompt, timeout) {
   const cfg = getAgent('hermes');
   if (!cfg) {
@@ -19,6 +23,7 @@ export async function run(prompt, timeout) {
       timeout: ms,
       maxBuffer: MAX_BUFFER,
       killSignal: 'SIGTERM',
+      stdio: ['ignore', 'pipe', 'pipe'], // close stdin — Hermes -z doesn't read it
     });
 
     return {
