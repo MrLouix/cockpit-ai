@@ -2,13 +2,11 @@
  * AI Agent CLI configurations — built from actual `--help` output.
  *
  * Installed agents (verified on this machine):
- *   • hermes   → /home/ai_agent/.local/bin/hermes   (-z for non-interactive)
- *   • vibe     → /home/ai_agent/.local/bin/vibe      (-p for programmatic mode)
- *   • claude   → /usr/bin/claude                    (-p for print mode)
- *   • opencode → /home/ai_agent/.opencode/bin/opencode (run for non-interactive)
- *
- * Not installed (commented out, ready to be enabled):
- *   • antigravity (ag)
+ *   • hermes      → /home/ai_agent/.local/bin/hermes   (-z for non-interactive)
+ *   • vibe        → /home/ai_agent/.local/bin/vibe      (-p for programmatic mode)
+ *   • claude      → /usr/bin/claude                    (-p for print mode)
+ *   • opencode    → /home/ai_agent/.opencode/bin/opencode (run for non-interactive)
+ *   • antigravity → /home/ai_agent/.local/bin/agy       (--print for non-interactive)
  *
  * Each agent entry defines:
  *   command   – CLI binary (resolved via PATH)
@@ -58,20 +56,21 @@ const agents = {
     args: ['-p'],                  // claude -p --output-format json "prompt"
     jsonArgs: ['--output-format', 'json'],
     timeout: 300_000,
-    outputFmt: 'text',
+    outputFmt: 'json',
     installed: true,
   },
 
-  // ── Antigravity (NOT installed) ───────────────────────────────────────────
-  // Needs investigation — no `ag` binary found on this machine.
-  // Uncomment and adjust args once installed.
-  // antigravity: {
-  //   command: 'ag',
-  //   args: ['-p'],
-  //   timeout: 300_000,
-  //   outputFmt: 'text',
-  //   installed: false,
-  // },
+  // ── Antigravity ────────────────────────────────────────────────────────
+  // Non-interactive via --print or -p flag
+  // Output is plain text on stdout (no JSON flag available)
+  // Source: agy --help
+  antigravity: {
+    command: '/home/ai_agent/.local/bin/agy',
+    args: ['--print'],
+    timeout: 300_000,
+    outputFmt: 'text',
+    installed: true,
+  },
 
   // ── OpenCode ─────────────────────────────────────────────────────────────
   // Non-interactive via `opencode run --format json "prompt"`

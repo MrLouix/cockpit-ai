@@ -481,8 +481,12 @@ function AppContent() {
         <NewSessionModal
           onClose={() => setShowNewSession(false)}
           onSubmit={(data) => {
-            createSession.mutate(data);
-            setShowNewTask(true);
+            createSession.mutate(data, {
+              onSuccess: () => {
+                setSelectedDirectory(data.directory);
+              },
+            });
+            setShowNewSession(false);
           }}
         />
       )}

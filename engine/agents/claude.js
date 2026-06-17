@@ -38,10 +38,38 @@ export async function run(prompt, timeout) {
       const rawOutput = stdout.trim();
       const stderrTrimmed = stderr.trim();
       
-      if (code === 0) {
-        resolve(parseResult(rawOutput, stderrTrimmed, cfg.outputFmt));
+      // Always try to parse stdout first - Claude sends errors on stdout as JSON
+      if (cfg.outputFmt === 'json' && rawOutput) {
+        try {
+          const parsed = JSON.parse(rawOutput);
+          // Claude returns error info in JSON: {is_error: true, result: "error message", api_error_status: 429}
+          if (parsed.is_error === true) {
+            const errorMsg = parsed.result || parsed.error || 'Unknown error';
+            const apiStatus = parsed.api_error_status ? ` (API status: ${parsed.api_error_status})` : '';
+            resolve({ success: false, error: errorMsg + apiStatus, raw: parsed });
+          } else if (code === 0) {
+            // Normal successful response
+            const text = parsed?.result?.text ?? parsed?.result ?? '';
+            resolve({ success: true, result: String(text).trim(), raw: parsed });
+          } else {
+            // Non-zero exit code with JSON output
+            resolve({ success: false, error: rawOutput, raw: parsed });
+          }
+        } catch {
+          // Not valid JSON, fall through to text handling
+          if (code === 0) {
+            resolve({ success: true, result: rawOutput, error: stderrTrimmed || undefined });
+          } else {
+            resolve({ success: false, error: stderrTrimmed || rawOutput || `Process exited with code ${code}` });
+          }
+        }
       } else {
-        resolve({ success: false, error: stderrTrimmed || `Process exited with code ${code}` });
+        // Text mode
+        if (code === 0) {
+          resolve({ success: true, result: rawOutput, error: stderrTrimmed || undefined });
+        } else {
+          resolve({ success: false, error: stderrTrimmed || rawOutput || `Process exited with code ${code}` });
+        }
       }
     });
 
@@ -58,23 +86,3 @@ export async function run(prompt, timeout) {
   });
 }
 
-/** Parse the agent output based on the configured format. */
-function parseResult(stdout, stderr, outputFmt) {
-  if (outputFmt === 'json') {
-    try {
-      const parsed = JSON.parse(stdout);
-      // Claude: {result:{text:"..."}}, {result:"..."}
-      const text = parsed?.result?.text ?? parsed?.result ?? '';
-      return { success: true, result: String(text).trim(), raw: parsed };
-    } catch {
-      // JSON parse failed — return raw with warning
-      return { success: true, result: stdout, error: 'Failed to parse JSON output' };
-    }
-  }
-  // text mode
-  return {
-    success: true,
-    result: stdout,
-    error: stderr || undefined,
-  };
-}
