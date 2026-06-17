@@ -20,12 +20,12 @@ const LABELS: Record<TaskStatus, string> = {
 };
 
 const TEXT: Record<TaskStatus, string> = {
-  pending: 'text-amber-700 bg-amber-50',
-  running: 'text-blue-700 bg-blue-50',
-  success: 'text-emerald-700 bg-emerald-50',
-  pause: 'text-slate-600 bg-slate-100',
-  failed: 'text-rose-700 bg-rose-50',
-  skipped: 'text-violet-700 bg-violet-50',
+  pending: 'text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/30',
+  running: 'text-blue-700 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30',
+  success: 'text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30',
+  pause: 'text-slate-600 dark:text-slate-400 bg-slate-100 dark:bg-slate-700/40',
+  failed: 'text-rose-700 dark:text-rose-400 bg-rose-50 dark:bg-rose-900/30',
+  skipped: 'text-violet-700 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/30',
 };
 
 interface StatusBadgeProps {

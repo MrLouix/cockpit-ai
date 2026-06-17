@@ -8,9 +8,9 @@ interface FilterBarProps {
 }
 
 const FILTERS: { key: FilterMode; label: string; color: string; border: string; dot: string }[] = [
-  { key: '', label: 'Toutes', color: 'bg-slate-500 text-white shadow-slate-200/50', border: 'border-slate-300 text-slate-700 hover:border-slate-400', dot: 'bg-slate-400' },
-  { key: 'completed', label: 'Terminées', color: 'bg-emerald-500 text-white shadow-emerald-200/50', border: 'border-emerald-300 text-emerald-700 hover:border-emerald-400', dot: 'bg-emerald-400' },
-  { key: 'pending', label: 'En cours', color: 'bg-blue-500 text-white shadow-blue-200/50', border: 'border-blue-300 text-blue-700 hover:border-blue-400', dot: 'bg-blue-400' },
+  { key: '', label: 'Toutes', color: 'bg-slate-500 text-white shadow-slate-200/50 dark:shadow-slate-700/50', border: 'border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 hover:border-slate-400 dark:hover:border-slate-500', dot: 'bg-slate-400 dark:bg-slate-500' },
+  { key: 'completed', label: 'Terminées', color: 'bg-emerald-500 text-white shadow-emerald-200/50 dark:shadow-emerald-700/50', border: 'border-emerald-300 dark:border-emerald-600 text-emerald-700 dark:text-emerald-300 hover:border-emerald-400 dark:hover:border-emerald-500', dot: 'bg-emerald-400 dark:bg-emerald-500' },
+  { key: 'pending', label: 'En cours', color: 'bg-blue-500 text-white shadow-blue-200/50 dark:shadow-blue-700/50', border: 'border-blue-300 dark:border-blue-600 text-blue-700 dark:text-blue-300 hover:border-blue-400 dark:hover:border-blue-500', dot: 'bg-blue-400 dark:bg-blue-500' },
 ];
 
 export const FilterBar: React.FC<FilterBarProps> = ({
@@ -18,7 +18,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   onFilterChange,
 }) => {
   return (
-    <div className="sticky top-[56px] z-30 mb-4 -mx-4 sm:-mx-6 px-4 sm:px-6 py-3 backdrop-blur-md bg-white/70 border-b border-slate-100/60 shadow-sm shadow-slate-100/30">
+    <div className="sticky top-[56px] z-30 mb-4 -mx-4 sm:-mx-6 px-4 sm:px-6 py-3 backdrop-blur-md bg-white/70 dark:bg-slate-800/70 border-b border-slate-100/60 dark:border-slate-700/60 shadow-sm shadow-slate-100/30 dark:shadow-slate-700/30">
       <div className="mx-auto max-w-7xl flex flex-wrap items-center gap-3">
         {/* Status filter pills */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
@@ -31,10 +31,10 @@ export const FilterBar: React.FC<FilterBarProps> = ({
                 className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-all whitespace-nowrap ${
                   active
                     ? `border-transparent ${f.color} shadow-sm`
-                    : `${f.border} bg-white/80 hover:bg-white`
+                    : `${f.border} bg-white/80 dark:bg-slate-800/80 hover:bg-white dark:hover:bg-slate-700/80`
                 }`}
               >
-                <span className={`h-1.5 w-1.5 rounded-full transition ${f.dot} ${active ? 'bg-white' : ''}`} />
+                <span className={`h-1.5 w-1.5 rounded-full transition ${f.dot} ${active ? 'bg-white dark:bg-slate-700' : ''}`} />
                 {f.label}
               </button>
             );
@@ -45,7 +45,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
         {selectedFilter && (
           <button
             onClick={() => onFilterChange('')}
-            className="flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium text-slate-400 transition hover:bg-slate-100 hover:text-slate-600 whitespace-nowrap"
+            className="flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium text-slate-400 dark:text-slate-500 transition hover:bg-slate-100 dark:hover:bg-slate-700/50 hover:text-slate-600 dark:hover:text-slate-400 whitespace-nowrap"
           >
             <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
