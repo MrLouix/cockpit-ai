@@ -19,9 +19,10 @@ const agentModules = {
  * If the wrapper's config is not installed (ag, opencode), returns graceful error.
  * @param {string} agentName - The name of the agent to run.
  * @param {string} prompt - The prompt to send to the agent.
+ * @param {string} cwd - The working directory for the agent process.
  * @returns {Promise<{success: boolean, result: string, error?: string}>}
  */
-export async function runAgent(agentName, prompt) {
+export async function runAgent(agentName, prompt, cwd = process.cwd()) {
   const cfg = getAgent(agentName);
   if (!cfg) {
     return { success: false, error: `Unknown or uninstalled agent: ${agentName}` };
@@ -32,7 +33,7 @@ export async function runAgent(agentName, prompt) {
     return { success: false, error: `No module found for agent: ${agentName}` };
   }
 
-  return module.run(prompt, cfg.timeout);
+  return module.run(prompt, cfg.timeout, cwd);
 }
 
 /**

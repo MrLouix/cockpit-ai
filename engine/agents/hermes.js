@@ -6,7 +6,7 @@ import { getAgent } from '../config/agents.js';
  * Wrapper Hermes — lance `hermes -z "prompt"`.
  * Stdin est ignoré car Hermes ne lit pas stdin en mode -z.
  */
-export async function run(prompt, timeout) {
+export async function run(prompt, timeout, cwd = process.cwd()) {
   const cfg = getAgent('hermes');
   if (!cfg) {
     return { success: false, error: 'Hermes CLI is not installed on this machine.' };
@@ -23,6 +23,7 @@ export async function run(prompt, timeout) {
       stdio: [nullFd, 'pipe', 'pipe'],
       timeout: ms,
       killSignal: 'SIGTERM',
+      cwd,
     });
 
     let stdout = '';

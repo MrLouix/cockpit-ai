@@ -6,7 +6,7 @@ import { getAgent } from '../config/agents.js';
  * Wrapper Claude — lance `claude -p` avec le prompt en argument.
  * Utilise spawn avec stdin redirigé vers /dev/null pour éviter l'attente de 3s.
  */
-export async function run(prompt, timeout) {
+export async function run(prompt, timeout, cwd = process.cwd()) {
   const cfg = getAgent('claude');
   if (!cfg) {
     return { success: false, error: 'Claude CLI is not installed on this machine.' };
@@ -25,6 +25,7 @@ export async function run(prompt, timeout) {
       stdio: [nullFd, 'pipe', 'pipe'],
       timeout: ms,
       killSignal: 'SIGTERM',
+      cwd,
     });
 
     let stdout = '';

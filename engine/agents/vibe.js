@@ -6,7 +6,7 @@ import { getAgent } from '../config/agents.js';
  * Vibe CLI wrapper.
  * Correct arg order: vibe -p "prompt" --output {text|json}
  */
-export async function run(prompt, timeout) {
+export async function run(prompt, timeout, cwd = process.cwd()) {
   const cfg = getAgent('vibe');
   if (!cfg) {
     return { success: false, error: 'Vibe CLI is not installed on this machine.' };
@@ -25,6 +25,7 @@ export async function run(prompt, timeout) {
       stdio: [nullFd, 'pipe', 'pipe'],
       timeout: ms,
       killSignal: 'SIGTERM',
+      cwd,
       env: {
         ...process.env,
         VIBE_ENABLE_CONNECTORS: 'false',

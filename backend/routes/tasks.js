@@ -147,9 +147,28 @@ async function updateSubtask(taskId, subtaskId, update) {
   if (!task) return null;
   const sub = task.subtasks.id(subtaskId);
   if (!sub) return null;
+  
   Object.assign(sub, update);
+  
+  if (update.status === 'pending') {
+    // If a subtask is resumed, reset parent to running so engine can execute it
+    task.status = 'running';
+    task.endDate = undefined;
+  } else if (update.status === 'skipped') {
+    // If a subtask is skipped, check if all are completed
+    const allDone = task.subtasks.every(
+      (st) => st.status === 'success' || st.status === 'skipped' || st.status === 'failed'
+    );
+    if (allDone && task.status === 'running') {
+      const successCount = task.subtasks.filter((st) => st.status === 'success').length;
+      task.result = `${successCount}/${task.subtasks.length} subtasks completed.`;
+      task.status = 'success';
+      task.endDate = new Date();
+    }
+  }
+  
   await task.save();
-  return task;
+  return Task.findById(taskId).populate('sessionId', 'directory titre');
 }
 
 // PATCH /api/tasks/:id/subtasks/:subtaskId/skip

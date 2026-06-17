@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import express from 'express';
 import { Task } from './models/Task.js';
+import { Session } from './models/Session.js';
 import { runAgent, detectSubtasks } from './agents/index.js';
 
 dotenv.config();
@@ -50,19 +51,22 @@ async function processTask(task) {
   task.updatedAt = new Date();
   await task.save();
 
-  const result = await runAgent(task.agent, task.prompt);
+  // Get the session directory for the working directory
+  const session = await Session.findById(task.sessionId);
+  const cwd = session?.directory || process.cwd();
+
+  const result = await runAgent(task.agent, task.prompt, cwd);
 
   task.executedByAgent = task.agent;
   task.updatedAt = new Date();
 
   if (result.success) {
-    task.result = result.result;
-    task.status = 'success';
-    task.endDate = new Date();
-
     const subtasks = detectSubtasks(result.result);
-    if (subtasks) {
+    if (subtasks && subtasks.length > 0) {
       console.log(`[ENGINE] Detected ${subtasks.length} subtasks for task ${task._id}`);
+      task.status = 'running';
+      task.result = `[DECOMPOSITION] ${subtasks.length} sous-tâches créées`;
+      
       for (const stPrompt of subtasks) {
         task.subtasks.push({
           prompt: stPrompt,
@@ -71,6 +75,10 @@ async function processTask(task) {
           createdAt: new Date(),
         });
       }
+    } else {
+      task.result = result.result;
+      task.status = 'success';
+      task.endDate = new Date();
     }
   } else {
     task.result = `Error: ${result.error}`;
@@ -86,6 +94,10 @@ async function processTask(task) {
 
 async function processSubtasks(task) {
   if (!task.subtasks || task.subtasks.length === 0) return;
+
+  // Get the session directory for the working directory
+  const session = await Session.findById(task.sessionId);
+  const cwd = session?.directory || process.cwd();
 
   const pendingSubtasks = task.subtasks.filter(
     (st) => st.status === 'pending' || st.status === 'running'
@@ -113,21 +125,40 @@ async function processSubtasks(task) {
     task.updatedAt = new Date();
     await task.save();
 
-    const result = await runAgent(task.agent, subtask.prompt);
+    const result = await runAgent(subtask.agent || task.agent, subtask.prompt, cwd);
 
     if (result.success) {
       subtask.status = 'success';
       subtask.result = result.result;
-      subtask.executedByAgent = task.agent;
+      subtask.executedByAgent = subtask.agent || task.agent;
     } else {
       subtask.status = 'failed';
       subtask.result = `Error: ${result.error}`;
+      subtask.executedByAgent = subtask.agent || task.agent;
     }
 
     subtask.endDate = new Date();
     task.updatedAt = new Date();
     await task.save();
     console.log(`[ENGINE] Subtask → ${subtask.status}`);
+  }
+
+  // Check again after processing all pending subtasks
+  const remainingPending = task.subtasks.filter(
+    (st) => st.status === 'pending' || st.status === 'running'
+  );
+  if (remainingPending.length === 0) {
+    const allDone = task.subtasks.every(
+      (st) => st.status === 'success' || st.status === 'skipped' || st.status === 'failed'
+    );
+    if (allDone && task.status === 'running') {
+      const successCount = task.subtasks.filter((st) => st.status === 'success').length;
+      task.result = `${successCount}/${task.subtasks.length} subtasks completed.`;
+      task.status = 'success';
+      task.endDate = new Date();
+      await task.save();
+      console.log(`[ENGINE] All subtasks done for task ${task._id} — parent marked success`);
+    }
   }
 }
 
@@ -154,16 +185,23 @@ async function main() {
 
   while (true) {
     try {
-      const pendingTasks = await Task.find({ status: 'pending' })
-        .sort({ createdAt: 1 })
-        .limit(1);
+      const activeTasks = await Task.find({
+        status: { $in: ['pending', 'running'] }
+      }).sort({ createdAt: 1 });
 
-      if (pendingTasks.length > 0) {
-        const task = pendingTasks[0];
-        await processTask(task);
+      for (const task of activeTasks) {
+        if (task.status === 'pending') {
+          await processTask(task);
+        }
 
-        if (task.subtasks && task.subtasks.length > 0) {
-          await processSubtasks(task);
+        if (task.status === 'running') {
+          if (task.subtasks && task.subtasks.length > 0) {
+            await processSubtasks(task);
+          } else {
+            console.log(`[ENGINE] Found stuck running task ${task._id} without subtasks. Resetting to pending.`);
+            task.status = 'pending';
+            await task.save();
+          }
         }
       }
     } catch (err) {

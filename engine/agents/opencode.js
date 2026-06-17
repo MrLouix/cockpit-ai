@@ -6,7 +6,7 @@ import { getAgent } from '../config/agents.js';
  * OpenCode CLI wrapper.
  * Uses: opencode run --format {json|default} "prompt"
  */
-export async function run(prompt, timeout) {
+export async function run(prompt, timeout, cwd = process.cwd()) {
   const cfg = getAgent('opencode');
   if (!cfg) {
     return { success: false, error: 'OpenCode CLI is not installed on this machine.' };
@@ -25,6 +25,7 @@ export async function run(prompt, timeout) {
       stdio: [nullFd, 'pipe', 'pipe'],
       timeout: ms,
       killSignal: 'SIGTERM',
+      cwd,
     });
 
     let stdout = '';

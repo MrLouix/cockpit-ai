@@ -8,7 +8,7 @@ import { getAgent } from '../config/agents.js';
  * Output is plain text on stdout.
  * Source: agy --help
  */
-export async function run(prompt, timeout) {
+export async function run(prompt, timeout, cwd = process.cwd()) {
   const cfg = getAgent('antigravity');
   if (!cfg) {
     return { success: false, error: 'Antigravity CLI (agy) is not installed on this machine.' };
@@ -25,6 +25,7 @@ export async function run(prompt, timeout) {
       stdio: [nullFd, 'pipe', 'pipe'],
       timeout: ms,
       killSignal: 'SIGTERM',
+      cwd,
     });
 
     let stdout = '';
