@@ -9,6 +9,7 @@ import {
   useResumeTask,
   useCreateSession,
   useCreateTask,
+  KEYS,
 } from './hooks/useTasks';
 import { FilterBar } from './components/FilterBar';
 import { TaskTable } from './components/TaskTable';
@@ -147,7 +148,7 @@ function AppContent() {
         // Directory filter
         if (selectedDirectory) {
           const sess = sessionMap[t.sessionIdStr];
-          if (!sess || sess.directory !== selectedDirectory) return false;
+          if (!sess || (sess.directory || '') !== selectedDirectory) return false;
         }
         // Status group filter
         if (!matchesFilter(t.status, selectedFilter)) return false;
@@ -179,7 +180,12 @@ function AppContent() {
 
   const handleQuickSend = () => {
     if (!selectedSessionId || !quickPrompt.trim()) return;
-    createTask.mutate({ sessionId: selectedSessionId, prompt: quickPrompt.trim(), agent: quickAgent });
+    createTask.mutate({ sessionId: selectedSessionId, prompt: quickPrompt.trim(), agent: quickAgent }, {
+      onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: KEYS.tasks });
+        queryClient.invalidateQueries({ queryKey: KEYS.sessions });
+      }
+    });
     setQuickPrompt('');
   };
 
@@ -205,9 +211,9 @@ function AppContent() {
     );
   }
 
-  const currentTitle = selectedDirectory
-    ? directories.find(d => d === selectedDirectory)?.split('/').pop() || selectedDirectory
-    : 'Tous les projets';
+  // Find the title of the selected session
+  const currentSession = sessions.find(s => s.directory === selectedDirectory);
+  const currentTitle = currentSession?.titre || selectedDirectory?.split('/').pop() || selectedDirectory || 'Tous les projets';
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-gradient-to-br from-slate-50 via-white to-indigo-50">
@@ -215,17 +221,15 @@ function AppContent() {
       <header className="shrink-0 z-40 border-b border-slate-200/40 bg-white/80 backdrop-blur-xl shadow-sm shadow-slate-200/20">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 py-2.5 gap-3">
           {/* Left: logo + burger menu */}
-          <div className="flex items-center gap-2 shrink-0 min-w-0">
-            <LogoPunchline />
-            <h1 className="text-base font-bold tracking-tight truncate max-w-[160px] sm:max-w-none">
-              <span className="bg-gradient-to-r from-violet-600 to-indigo-600 bg-clip-text text-transparent">cockpit</span>
-              <span className="text-slate-400">AI</span>
-            </h1>
-            {/* Project name — always visible */}
-            <span className="text-sm text-slate-500 truncate max-w-[120px] sm:max-w-xs">· {currentTitle}</span>
-
-            {/* Burger menu */}
-            <div className="relative ml-2" ref={burgerRef}>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 shrink-0 min-w-0">
+            <div className="flex items-center gap-2">
+              <LogoPunchline />
+              <h1 className="text-base font-bold tracking-tight truncate max-w-[160px] sm:max-w-none">
+                <span className="bg-gradient-to-r from-violet-600 to-indigo-600 bg-clip-text text-transparent">cockpit</span>
+                <span className="text-slate-400">AI</span>
+              </h1>
+              {/* Burger menu */}
+              <div className="relative ml-2" ref={burgerRef}>
               <button
                 onClick={() => setBurgerOpen(!burgerOpen)}
                 className="flex items-center gap-2 rounded-lg border border-slate-200/80 bg-white/60 px-2.5 py-1.5 text-sm font-medium text-slate-600 shadow-sm transition-all hover:border-indigo-300 hover:text-indigo-600 hover:bg-indigo-50/40"
@@ -234,10 +238,15 @@ function AppContent() {
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
                 </svg>
-                <span className="hidden sm:inline max-w-32 truncate">{currentTitle}</span>
-                {/* Active indicator */}
-                {selectedDirectory && <span className="h-2 w-2 rounded-full bg-indigo-500" />}
+                <span className="max-w-48 truncate">{currentTitle}</span>
               </button>
+
+              {/* Current directory — on PC: to the right of burger, on mobile: on new line */}
+              {selectedDirectory && (
+                <span className="hidden sm:inline-block text-sm font-medium text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-lg truncate max-w-[200px]">
+                  {selectedDirectory}
+                </span>
+              )}
 
               {/* Dropdown menu */}
               {burgerOpen && (
@@ -250,39 +259,35 @@ function AppContent() {
                     {/* All projects */}
                     <button
                       onClick={() => { setSelectedDirectory(''); setBurgerOpen(false); }}
-                      className={`w-full flex items-center gap-3 px-4 py-2 text-sm transition-colors ${
+                      className={`w-full text-left px-4 py-2 text-sm transition-colors ${
                         !selectedDirectory
                           ? 'bg-indigo-50 text-indigo-700 font-medium'
                           : 'text-slate-700 hover:bg-slate-50'
                       }`}
                     >
-                      <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25a2.25 2.25 0 01-2.25-2.25v-2.25z" />
-                      </svg>
                       Tous les projets
                     </button>
 
                     {/* Project list */}
-                    {directories.map((d) => {
-                      const isActive = selectedDirectory === d;
-                      const title = d.split('/').pop() || d;
-                      return (
-                        <button
-                          key={d}
-                          onClick={() => { setSelectedDirectory(d); setBurgerOpen(false); }}
-                          className={`w-full flex items-center gap-3 px-4 py-2 text-sm transition-colors ${
-                            isActive
-                              ? 'bg-indigo-50 text-indigo-700 font-medium'
-                              : 'text-slate-700 hover:bg-slate-50'
-                          }`}
-                        >
-                          <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 12.75V12A2.25 2.25 0 014.5 9.75h15A2.25 2.25 0 0121.75 12v.75m-8.25-4.5h3m-3 0a2.25 2.25 0 012.25 2.25v0a2.25 2.25 0 01-2.25 2.25m-3 0a2.25 2.25 0 012.25 2.25v0a2.25 2.25 0 01-2.25 2.25" />
-                          </svg>
-                          <span className="truncate">{title}</span>
-                        </button>
-                      );
-                    })}
+                    {sessions
+                      .filter(s => s.directory)
+                      .map((s) => {
+                        const isActive = selectedDirectory === s.directory;
+                        const title = s.titre || s.directory.split('/').pop() || s.directory;
+                        return (
+                          <button
+                            key={s._id}
+                            onClick={() => { setSelectedDirectory(s.directory); setBurgerOpen(false); }}
+                            className={`w-full text-left px-4 py-2 text-sm transition-colors ${
+                              isActive
+                                ? 'bg-indigo-50 text-indigo-700 font-medium'
+                                : 'text-slate-700 hover:bg-slate-50'
+                            }`}
+                          >
+                            <span className="truncate">{title}</span>
+                          </button>
+                        );
+                      })}
 
                     {/* Divider */}
                     <div className="my-1 border-t border-slate-100" />
@@ -301,6 +306,13 @@ function AppContent() {
                 </div>
               )}
             </div>
+          </div>
+          {/* Current directory on mobile - new line */}
+            {selectedDirectory && (
+              <span className="sm:hidden text-sm font-medium text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-lg truncate">
+                {selectedDirectory}
+              </span>
+            )}
           </div>
 
           {/* Right: view toggle + new task */}
@@ -484,6 +496,7 @@ function AppContent() {
             createSession.mutate(data, {
               onSuccess: () => {
                 setSelectedDirectory(data.directory);
+                queryClient.invalidateQueries({ queryKey: KEYS.sessions });
               },
             });
             setShowNewSession(false);
@@ -494,7 +507,11 @@ function AppContent() {
         <NewTaskModal
           sessions={sessions}
           onClose={() => setShowNewTask(false)}
-          onSubmit={(data) => createTask.mutate(data)}
+          onSubmit={(data) => createTask.mutate(data, {
+            onSuccess: () => {
+              queryClient.invalidateQueries({ queryKey: KEYS.tasks });
+            }
+          })}
         />
       )}
       {selectedTask && (
