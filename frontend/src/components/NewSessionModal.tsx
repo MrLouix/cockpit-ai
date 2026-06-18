@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { DirectoryPicker } from './DirectoryPicker';
+import { FolderOpen, Info, X } from 'lucide-react';
 
 interface NewSessionModalProps {
   onClose: () => void;
@@ -14,34 +15,30 @@ export const NewSessionModal: React.FC<NewSessionModalProps> = ({ onClose, onSub
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-6 shadow-2xl shadow-slate-300/30 dark:shadow-slate-700/30 animate-in fade-in zoom-in-95"
+        className="w-full max-w-md rounded-2xl border border-slate-300/80 dark:border-slate-700/80 bg-white dark:bg-slate-800 p-6 shadow-2xl shadow-slate-300/30 dark:shadow-slate-700/30 animate-in fade-in zoom-in-95"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-5 flex items-center justify-between">
           <div>
             <h2 className="text-lg font-bold text-slate-800 dark:text-slate-200">Nouveau Projet</h2>
-            <p className="mt-0.5 text-xs text-slate-400 dark:text-slate-500">Créez un espace pour vos agents IA</p>
+            <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">Créez un espace pour vos agents IA</p>
           </div>
           <button
             onClick={onClose}
-            className="rounded-lg p-1.5 text-slate-400 dark:text-slate-500 transition hover:bg-slate-100 dark:hover:bg-slate-700/50 hover:text-slate-600 dark:hover:text-slate-400"
+            className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 transition hover:bg-slate-100 dark:hover:bg-slate-700/50 hover:text-slate-700 dark:hover:text-slate-300 cursor-pointer"
             aria-label="Fermer"
           >
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
+            <X className="h-4 w-4" />
           </button>
         </div>
 
-        <div className="flex gap-2 rounded-lg bg-indigo-50 dark:bg-slate-700/40 px-3 py-2 mb-5">
-          <svg className="mt-0.5 h-4 w-4 shrink-0 text-indigo-500 dark:text-indigo-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-          <p className="text-xs text-indigo-700 dark:text-indigo-300">Un projet est lié à un répertoire de code. Les tâches seront exécutées dedans.</p>
+        <div className="flex gap-2 rounded-lg bg-indigo-100/80 dark:bg-slate-700/40 px-3 py-2 mb-5">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600 dark:text-indigo-400" />
+          <p className="text-sm text-indigo-700 dark:text-indigo-300">Un projet est lié à un répertoire de code. Les tâches seront exécutées dedans.</p>
         </div>
 
         <div className="space-y-4">
@@ -53,7 +50,7 @@ export const NewSessionModal: React.FC<NewSessionModalProps> = ({ onClose, onSub
               value={titre}
               onChange={(e) => setTitre(e.target.value)}
               placeholder="e.g. Refonte API v2"
-              className="w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2.5 text-sm text-slate-700 dark:text-slate-300 shadow-sm transition focus:border-indigo-300 dark:focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-700/50"
+              className="w-full rounded-lg border border-slate-300/80 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2.5 text-sm text-slate-700 dark:text-slate-300 shadow-sm transition focus:border-indigo-300 dark:focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-700/50 cursor-pointer"
               autoFocus
             />
           </div>
@@ -67,25 +64,26 @@ export const NewSessionModal: React.FC<NewSessionModalProps> = ({ onClose, onSub
                 onChange={(e) => setDirectory(e.target.value)}
                 placeholder="/home/ai_agent/projects/my-app"
                 spellCheck={false}
-                className="flex-1 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2.5 text-sm font-mono text-slate-700 dark:text-slate-300 shadow-sm transition focus:border-indigo-300 dark:focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-700/50"
+                className="flex-1 rounded-lg border border-slate-300/80 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2.5 text-sm font-mono text-slate-700 dark:text-slate-300 shadow-sm transition focus:border-indigo-300 dark:focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-700/50"
               />
               <div className="relative">
                 <button
                   type="button"
                   onClick={() => setShowPicker(true)}
-                  className="rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2.5 text-sm font-medium text-slate-500 dark:text-slate-400 shadow-sm transition hover:bg-slate-50 dark:hover:bg-slate-600/50 hover:text-slate-700 dark:hover:text-slate-300"
+                  className="rounded-lg border border-slate-300/80 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2.5 text-sm font-medium text-slate-600 dark:text-slate-300 shadow-sm transition hover:bg-slate-100/80 dark:hover:bg-slate-600/50 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer"
                   aria-label="Parcourir les répertoires"
                 >
-                  📁 Parcourir
+                  <FolderOpen className="h-4 w-4" />
+                  <span className="ml-1">Parcourir</span>
                 </button>
               </div>
             </div>
           </div>
-          <div className="flex justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-700/50">
+          <div className="flex justify-end gap-2 pt-3 border-t border-slate-200/60 dark:border-slate-700/50">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg px-4 py-2 text-sm font-medium text-slate-500 dark:text-slate-400 transition hover:bg-slate-100 dark:hover:bg-slate-700/50 hover:text-slate-700 dark:hover:text-slate-300"
+              className="rounded-lg px-4 py-2 text-sm font-medium text-slate-600 dark:text-slate-400 transition hover:bg-slate-100 dark:hover:bg-slate-700/50 hover:text-slate-800 dark:hover:text-slate-300 cursor-pointer"
             >
               Annuler
             </button>
@@ -93,7 +91,7 @@ export const NewSessionModal: React.FC<NewSessionModalProps> = ({ onClose, onSub
               type="button"
               onClick={() => valid && onSubmit({ titre: titre.trim(), directory: directory.trim() })}
               disabled={!valid}
-              className="rounded-lg bg-gradient-to-r from-violet-500 to-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:shadow-md disabled:opacity-40 dark:shadow-indigo-700/50"
+              className="rounded-lg bg-gradient-to-r from-violet-500 to-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:shadow-md disabled:opacity-40 dark:shadow-indigo-700/50 cursor-pointer"
             >
               Créer le projet
             </button>
@@ -111,3 +109,5 @@ export const NewSessionModal: React.FC<NewSessionModalProps> = ({ onClose, onSub
     </div>
   );
 };
+
+export default NewSessionModal;
