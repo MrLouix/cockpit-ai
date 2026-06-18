@@ -40,6 +40,7 @@ interface AgentSelectorProps {
   variant?: 'buttons' | 'dropdown' | 'compact' | 'badge';
   className?: string;
   showLabel?: boolean;
+  onClick?: () => void;
 }
 
 // Helper to get agent config
@@ -65,6 +66,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
   variant = 'buttons',
   className = '',
   showLabel = true,
+  onClick,
 }) => {
   const selectedAgent = AGENTS.find(a => a.id === value);
 
@@ -83,8 +85,8 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
     return (
       <button
         type="button"
-        onClick={() => onChange(value)}
-        className={`flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 px-2.5 py-1.5 text-sm font-medium text-slate-600 dark:text-slate-300 shadow-sm transition hover:border-slate-300 dark:hover:border-slate-500 ${className}`}
+        onClick={onClick || (() => onChange(value))}
+        className={`flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 px-2.5 py-1.5 text-sm font-medium text-slate-600 dark:text-slate-300 shadow-sm transition hover:border-slate-300 dark:hover:border-slate-500 cursor-pointer ${className}`}
         aria-label={`Agent actuel: ${selectedAgent?.label || value}`}
       >
         <Icon className="h-4 w-4" />

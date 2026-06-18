@@ -390,7 +390,7 @@ function AppContent() {
           <div className="px-4 py-3">
             <div className="flex items-center gap-2">
               <div className="relative shrink-0" ref={quickAgentRef}>
-                <AgentSelector value={quickAgent} onChange={setQuickAgent} variant="compact" showLabel={false} />
+                <AgentSelector value={quickAgent} onChange={setQuickAgent} variant="compact" showLabel={false} onClick={() => setQuickAgentOpen(!quickAgentOpen)} />
                 {quickAgentOpen && (
                   <div className="absolute bottom-full left-0 mb-2 w-48 rounded-xl border border-slate-300/80 dark:border-slate-600 bg-white dark:bg-slate-700 shadow-xl shadow-slate-200/40 dark:shadow-slate-700/40 overflow-hidden z-[60]">
                     <div className="py-1">
