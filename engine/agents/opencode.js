@@ -15,7 +15,7 @@ export const runOpencode = async (prompt, options = {}) => {
     const commandArgs = args;
 
     const spawnOptions = {
-      stdio: 'pipe',
+      stdio: ['ignore', 'pipe', 'pipe'], // stdin closed, stdout/stderr piped
       shell: false
     };
     
