@@ -6,6 +6,7 @@ const mockRunAgent = jest.fn();
 
 jest.unstable_mockModule('../agents/index.js', () => ({
   runAgent: mockRunAgent,
+  detectSubtasks: jest.fn(() => null),
 }));
 
 let processSubtasks;
@@ -149,7 +150,7 @@ describe('processSubtasks — agent selection', () => {
 
     await processSubtasks(task);
 
-    expect(mockRunAgent).toHaveBeenCalledWith('hermes', 'sub');
+    expect(mockRunAgent).toHaveBeenCalledWith('hermes', 'sub', { workingDirectory: '/proj' });
     const updated = await Task.findById(task._id);
     expect(updated.subtasks[0].executedByAgent).toBe('hermes');
   });
@@ -168,7 +169,7 @@ describe('processSubtasks — agent selection', () => {
 
     await processSubtasks(reloaded);
 
-    expect(mockRunAgent).toHaveBeenCalledWith('vibe', 'sub');
+    expect(mockRunAgent).toHaveBeenCalledWith('vibe', 'sub', { workingDirectory: '/proj' });
     const updated = await Task.findById(task._id);
     expect(updated.subtasks[0].executedByAgent).toBe('vibe');
   });
@@ -204,7 +205,7 @@ describe('processSubtasks — multiple subtasks', () => {
     await processSubtasks(task);
 
     expect(mockRunAgent).toHaveBeenCalledTimes(1);
-    expect(mockRunAgent).toHaveBeenCalledWith('claude', 'second');
+    expect(mockRunAgent).toHaveBeenCalledWith('claude', 'second', { workingDirectory: '/proj' });
     const updated = await Task.findById(task._id);
     expect(updated.subtasks[0].status).toBe('success');
     expect(updated.subtasks[1].status).toBe('success');

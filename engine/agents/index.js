@@ -12,10 +12,10 @@ const agentRunners = {
   opencode: runOpencode,
 };
 
-export const runAgent = async (agent, prompt) => {
+export const runAgent = async (agent, prompt, options = {}) => {
   const runner = agentRunners[agent];
   if (!runner) throw new Error(`Agent '${agent}' not supported`);
-  return runner(prompt);
+  return runner(prompt, options);
 };
 
 /**

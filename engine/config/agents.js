@@ -131,11 +131,28 @@ function listInstalled() {
     .map(([name]) => name);
 }
 
-/** Build the full argv array for spawning the agent with a given prompt. */
-function buildArgs(agentName, prompt) {
+/** 
+ * Build the full argv array for spawning the agent with a given prompt.
+ * @param {string} agentName - The agent name (e.g., 'claude', 'opencode')
+ * @param {string} prompt - The prompt to send to the agent
+ * @param {boolean} useJson - Whether to use JSON output format (if available)
+ * @returns {string[]} - Array of command-line arguments
+ */
+function buildArgs(agentName, prompt, useJson = false) {
   const cfg = getAgent(agentName);
   if (!cfg) throw new Error(`Unknown or uninstalled agent: ${agentName}`);
-  return [...cfg.args, prompt];
+  
+  const finalArgs = [...cfg.args];
+  
+  // Add JSON args if requested and available (before the prompt)
+  if (useJson && cfg.jsonArgs) {
+    finalArgs.push(...cfg.jsonArgs);
+  }
+  
+  // Append prompt as last argument
+  finalArgs.push(prompt);
+  
+  return finalArgs;
 }
 
 export { agents, getAgent, listInstalled, buildArgs };

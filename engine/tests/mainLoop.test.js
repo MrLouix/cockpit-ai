@@ -6,6 +6,7 @@ const mockRunAgent = jest.fn();
 
 jest.unstable_mockModule('../agents/index.js', () => ({
   runAgent: mockRunAgent,
+  detectSubtasks: jest.fn(() => null),
 }));
 
 let mainLoop, POLL_INTERVAL;

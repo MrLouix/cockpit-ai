@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import { runAgent, detectSubtasks } from './agents/index.js';
 import Task from './models/Task.js';
+import Session from './models/Session.js';
 import express from 'express';
 
 dotenv.config();
@@ -31,7 +32,7 @@ export const processSubtasks = async (task) => {
     allSubtasksCompleted = false;
 
     try {
-      const taskDoc = await Task.findById(task._id);
+      const taskDoc = await Task.findById(task._id).populate('sessionId');
       if (!taskDoc) continue;
 
       const subtaskIndex = taskDoc.subtasks.findIndex(st => st._id.equals(subtask._id));
@@ -41,7 +42,8 @@ export const processSubtasks = async (task) => {
       await taskDoc.save();
 
       const agentToUse = subtask.agent || task.agent;
-      const result = await runAgent(agentToUse, subtask.prompt);
+      const workingDirectory = taskDoc.sessionId?.directory;
+      const result = await runAgent(agentToUse, subtask.prompt, { workingDirectory });
 
       const taskDoc2 = await Task.findById(task._id);
       const subtaskIndex2 = taskDoc2.subtasks.findIndex(st => st._id.equals(subtask._id));
@@ -111,7 +113,7 @@ const shutdown = async (signal) => {
 process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 
-const startEngine = async () => {
+export const startEngine = async () => {
   await connectDB();
   console.log('AI Engine started');
   console.log(`Polling interval: ${POLL_INTERVAL / 1000}s`);
@@ -156,7 +158,9 @@ export const processTask = async (task) => {
   await Task.findByIdAndUpdate(task._id, { status: 'running' });
 
   try {
-    const result = await runAgent(task.agent, task.prompt);
+    const taskDoc = await Task.findById(task._id).populate('sessionId');
+    const workingDirectory = taskDoc?.sessionId?.directory;
+    const result = await runAgent(task.agent, task.prompt, { workingDirectory });
 
     if (result.success) {
       const subtasks = detectSubtasks(result.result);

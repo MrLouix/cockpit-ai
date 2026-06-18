@@ -6,6 +6,7 @@ const mockRunAgent = jest.fn();
 
 jest.unstable_mockModule('../agents/index.js', () => ({
   runAgent: mockRunAgent,
+  detectSubtasks: jest.fn(() => null),
 }));
 
 let processTask;
@@ -74,13 +75,13 @@ describe('processTask — success', () => {
     expect(updated.executedByAgent).toBe(task.agent);
   });
 
-  it('calls runAgent with task.agent and task.prompt', async () => {
+  it('calls runAgent with task.agent, task.prompt, and workingDirectory', async () => {
     mockRunAgent.mockResolvedValue({ success: true, result: '' });
     const task = await makeTask({ prompt: 'specific prompt', agent: 'claude' });
 
     await processTask(task);
 
-    expect(mockRunAgent).toHaveBeenCalledWith('claude', 'specific prompt');
+    expect(mockRunAgent).toHaveBeenCalledWith('claude', 'specific prompt', { workingDirectory: '/proj' });
   });
 });
 

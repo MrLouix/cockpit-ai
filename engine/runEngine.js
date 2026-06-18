@@ -10,4 +10,9 @@
  * - Saves results back to MongoDB
  */
 
-import './aiEngine.js';
+import { startEngine } from './aiEngine.js';
+
+startEngine().catch(err => {
+  console.error('Failed to start AI Engine:', err);
+  process.exit(1);
+});
