@@ -2,8 +2,11 @@ import { jest } from '@jest/globals';
 import { EventEmitter } from 'events';
 
 const mockSpawn = jest.fn();
+const mockReadFile = jest.fn();
+const mockUnlink = jest.fn();
 
 jest.unstable_mockModule('child_process', () => ({ spawn: mockSpawn }));
+jest.unstable_mockModule('fs/promises', () => ({ readFile: mockReadFile, unlink: mockUnlink }));
 
 let runClaude, runVibe, runAntigravity, runHermes, runOpencode;
 let runAgent, detectSubtasks;
@@ -17,7 +20,13 @@ beforeAll(async () => {
   ({ runAgent, detectSubtasks } = await import('../agents/index.js'));
 });
 
-beforeEach(() => mockSpawn.mockReset());
+beforeEach(() => {
+  mockSpawn.mockReset();
+  mockReadFile.mockReset();
+  mockUnlink.mockReset();
+  mockUnlink.mockResolvedValue(undefined);
+  mockReadFile.mockRejectedValue(new Error('ENOENT'));
+});
 
 function mockSuccess(stdout, stderr = '', exitCode = 0) {
   mockSpawn.mockImplementation(() => {
@@ -116,6 +125,53 @@ describe.each([
     expect(mockSpawn).toHaveBeenCalled();
     const [[_command, args]] = mockSpawn.mock.calls;
     expect(args).toContain('say "hello"');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Antigravity log-file fallback (rate-limit bug workaround)
+// ---------------------------------------------------------------------------
+
+describe('runAntigravity log-file fallback', () => {
+  it('falls back to log file when stdout is empty', async () => {
+    mockSuccess('');
+    mockReadFile.mockResolvedValue('response from log file');
+    const res = await runAntigravity('test prompt');
+    expect(res.success).toBe(true);
+    expect(res.result).toBe('response from log file');
+  });
+
+  it('passes --log-file as first args to agy', async () => {
+    mockSuccess('output');
+    await runAntigravity('test prompt');
+    expect(mockSpawn).toHaveBeenCalled();
+    const [[_command, args]] = mockSpawn.mock.calls;
+    expect(args[0]).toBe('--log-file');
+    expect(typeof args[1]).toBe('string');
+    expect(args[1]).toMatch(/agy-.*\.log$/);
+  });
+
+  it('uses stdout when available (ignores log file)', async () => {
+    mockSuccess('direct output');
+    mockReadFile.mockResolvedValue('log content');
+    const res = await runAntigravity('test');
+    expect(res.success).toBe(true);
+    expect(res.result).toBe('direct output');
+    expect(mockReadFile).not.toHaveBeenCalled();
+  });
+
+  it('cleans up log file after execution', async () => {
+    mockSuccess('output');
+    await runAntigravity('test');
+    expect(mockUnlink).toHaveBeenCalled();
+  });
+
+  it('returns failure when both stdout and log file are empty', async () => {
+    mockSuccess('', 'error occurred');
+    mockReadFile.mockRejectedValue(new Error('ENOENT'));
+    const res = await runAntigravity('test');
+    expect(res.success).toBe(false);
+    expect(res.error).toBe('error occurred');
   });
 });
 

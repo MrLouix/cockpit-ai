@@ -214,7 +214,7 @@ function AppContent() {
   const currentTitle = currentSession?.titre || selectedDirectory?.split('/').pop() || selectedDirectory || 'Tous les projets';
 
   return (
-    <div className={`flex flex-col h-screen overflow-hidden ${isDark ? 'dark bg-slate-900' : 'bg-gradient-to-br from-slate-100 via-white to-indigo-100'}`}>
+    <div className={`flex flex-col h-[100dvh] overflow-hidden ${isDark ? 'dark bg-slate-900' : 'bg-gradient-to-br from-slate-100 via-white to-indigo-100'}`}>
       <header className="shrink-0 z-50 isolate border-b border-slate-300/40 dark:border-slate-700/40 bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl shadow-sm shadow-slate-200/20 dark:shadow-slate-700/20">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 py-2.5 gap-3">
           <div className="flex flex-col sm:flex-row sm:items-center gap-2 shrink-0 min-w-0">
@@ -339,7 +339,7 @@ function AppContent() {
         </div>
       </header>
 
-      <main ref={tasksContainerRef} className="flex-1 overflow-y-auto w-full">
+      <main ref={tasksContainerRef} className="flex-1 min-h-0 overflow-y-auto w-full">
         <div className="sticky top-0 z-30 bg-gradient-to-br from-slate-100 via-white to-indigo-100 dark:bg-slate-800/90 dark:backdrop-blur-xl px-4 pt-3 pb-2">
           <div className="mx-auto max-w-7xl">
             <FilterBar selectedFilter={selectedFilter} onFilterChange={setSelectedFilter} />
@@ -409,8 +409,11 @@ function AppContent() {
       </main>
 
       {selectedDirectory && (
-        <div className="fixed bottom-4 left-4 right-4 sm:left-6 sm:right-6 md:left-8 md:right-8 lg:left-1/2 lg:-translate-x-1/2 lg:max-w-2xl z-40 rounded-2xl border border-slate-300/60 dark:border-slate-700/60 bg-white/90 dark:bg-slate-800/90 backdrop-blur-xl shadow-lg shadow-slate-300/30 dark:shadow-slate-700/30 transform translate-z-0">
-          <div className="px-4 py-3">
+        <div
+          className="shrink-0 z-40 border-t border-slate-300/60 dark:border-slate-700/60 bg-white/90 dark:bg-slate-800/90 backdrop-blur-xl shadow-[0_-4px_16px_rgba(0,0,0,0.06)] dark:shadow-[0_-4px_16px_rgba(0,0,0,0.3)]"
+          style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+        >
+          <div className="mx-auto max-w-2xl px-4 py-3">
             <div className="flex items-center gap-2">
               <div className="relative shrink-0" ref={quickAgentRef}>
                 <AgentSelector value={quickAgent} onChange={setQuickAgent} variant="compact" showLabel={false} onClick={() => setQuickAgentOpen(!quickAgentOpen)} />

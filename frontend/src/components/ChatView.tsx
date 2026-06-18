@@ -83,7 +83,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    bottomRef.current?.scrollIntoView({ behavior: 'instant' });
   }, [tasks.length]);
 
   const groups = groupTasksByDate(tasks);
