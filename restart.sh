@@ -38,7 +38,7 @@ echo "🚀 Démarrage de l'engine (port 3332)..."
 node ./engine/runEngine.js &
 ENGINE_PID=$!
 
-sleep 10
+sleep 2
 
 echo "🚀 Démarrage du front-end (port 3333)..."
 cd frontend && npx vite --port 3333 --host 0.0.0.0 &
