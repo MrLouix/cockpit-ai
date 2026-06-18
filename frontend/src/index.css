@@ -71,3 +71,8 @@ html {
 ::-webkit-scrollbar-thumb:hover {
   background: rgb(148 163 184 / 0.7);
 }
+
+/* Chat bubbles */
+.chat-bubble-user  { @apply bg-slate-100 dark:bg-slate-800 rounded-2xl rounded-br-sm; }
+.chat-bubble-agent { @apply rounded-2xl rounded-bl-sm; }
+.chat-avatar       { @apply w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0; }
