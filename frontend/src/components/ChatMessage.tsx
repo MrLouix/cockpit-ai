@@ -24,6 +24,7 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ task, onSkip, onResume
   const [expanded, setExpanded] = useState(false);
   const [showFullResult, setShowFullResult] = useState(false);
   const [showSubtasks, setShowSubtasks] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const agentConfig = getAgentConfig(task.agent);
   const AgentIcon = agentConfig?.icon ?? Bot;
@@ -139,13 +140,33 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ task, onSkip, onResume
               </button>
             )}
             <div className="flex-1" />
-            <button
-              onClick={(e) => { e.stopPropagation(); if (confirm('Supprimer cette tâche ?')) onDelete(task._id); }}
-              className="rounded px-1.5 py-0.5 text-xs font-medium text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/30 transition-colors"
-              aria-label="Supprimer"
-            >
-              Supprimer
-            </button>
+            {confirmingDelete ? (
+              <>
+                <span className="text-xs text-slate-500 dark:text-slate-400">Confirmer ?</span>
+                <button
+                  onClick={(e) => { e.stopPropagation(); onDelete(task._id); }}
+                  className="rounded px-1.5 py-0.5 text-xs font-medium text-white bg-rose-500 hover:bg-rose-600 transition-colors"
+                  aria-label="Confirmer la suppression"
+                >
+                  Oui
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setConfirmingDelete(false); }}
+                  className="rounded px-1.5 py-0.5 text-xs font-medium text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors"
+                  aria-label="Annuler"
+                >
+                  Non
+                </button>
+              </>
+            ) : (
+              <button
+                onClick={(e) => { e.stopPropagation(); setConfirmingDelete(true); }}
+                className="rounded px-1.5 py-0.5 text-xs font-medium text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/30 transition-colors"
+                aria-label="Supprimer"
+              >
+                Supprimer
+              </button>
+            )}
           </div>
         </div>
       </div>

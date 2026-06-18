@@ -19,7 +19,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
   onFilterChange,
 }) => {
   return (
-    <div className="sticky top-[56px] z-30 mb-4 -mx-4 sm:-mx-6 px-4 sm:px-6 py-3 backdrop-blur-md bg-white/70 dark:bg-slate-800/70 border-b border-slate-200/60 dark:border-slate-700/60 shadow-sm shadow-slate-100/30 dark:shadow-slate-700/30">
+    <div className="mb-4 py-1">
       <div className="mx-auto max-w-7xl flex flex-wrap items-center gap-3">
         {/* Status filter pills */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">

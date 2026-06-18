@@ -128,7 +128,7 @@ export const TaskCard: React.FC<TaskCardProps> = ({ task, onDelete, onSkip, onRe
         )}
         <div className="flex-1" />
         <button
-          onClick={(e) => { e.stopPropagation(); onDelete(task._id); }}
+          onClick={(e) => { e.stopPropagation(); if (confirm('Supprimer cette tâche ?')) onDelete(task._id); }}
           className="rounded px-1.5 py-0.5 text-xs font-medium text-rose-500 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 transition-colors cursor-pointer"
           aria-label="Supprimer"
           title="Supprimer"

@@ -1,4 +1,5 @@
-import { useMemo, useState, useRef, useEffect as useReactEffect } from 'react';
+import { useMemo, useState, useRef, useCallback, useEffect as useReactEffect } from 'react';
+import { useClickOutside } from './hooks/useClickOutside';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Task, Session, TaskStatus } from './types';
 import {
@@ -67,6 +68,16 @@ function AppContent() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [burgerOpen, setBurgerOpen] = useState(false);
 
+  const [keyboardOffset, setKeyboardOffset] = useState(0);
+  useReactEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => setKeyboardOffset(Math.max(0, window.innerHeight - vv.height - vv.offsetTop));
+    vv.addEventListener('resize', update);
+    vv.addEventListener('scroll', update);
+    return () => { vv.removeEventListener('resize', update); vv.removeEventListener('scroll', update); };
+  }, []);
+
   const [quickPrompt, setQuickPrompt] = useState('');
   const [quickAgent, setQuickAgent] = useState<AgentType>('hermes');
   const [quickAgentOpen, setQuickAgentOpen] = useState(false);
@@ -76,27 +87,8 @@ function AppContent() {
   const prevSelectedDirectory = useRef('');
 
   const burgerRef = useRef<HTMLDivElement>(null);
-  useReactEffect(() => {
-    if (!burgerOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (burgerRef.current && !burgerRef.current.contains(e.target as Node)) {
-        setBurgerOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [burgerOpen]);
-
-  useReactEffect(() => {
-    if (!quickAgentOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (quickAgentRef.current && !quickAgentRef.current.contains(e.target as Node)) {
-        setQuickAgentOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [quickAgentOpen]);
+  useClickOutside(burgerRef, useCallback(() => setBurgerOpen(false), []), burgerOpen);
+  useClickOutside(quickAgentRef, useCallback(() => setQuickAgentOpen(false), []), quickAgentOpen);
 
   const [isMobile, setIsMobile] = useState(false);
   useReactEffect(() => {
@@ -106,7 +98,7 @@ function AppContent() {
     return () => window.removeEventListener('resize', check);
   }, []);
 
-  const effectiveView = isMobile ? (viewMode === 'chat' ? 'chat' : 'cards') : viewMode;
+  const effectiveView = isMobile ? 'chat' : viewMode;
 
   const { data: sessions = [], isLoading: sessLoading, error: sessError } = useSessions();
   const { data: tasks = [], isLoading: tasksLoading, error: tasksError } = useTasks();
@@ -167,7 +159,7 @@ function AppContent() {
     }
   }, [selectedDirectory, normalizedTasks.length]);
 
-  const handleDelete = (id: string) => { if (confirm('Supprimer cette tâche ?')) deleteTask.mutate(id); };
+  const handleDelete = (id: string) => { deleteTask.mutate(id); };
   const handleSkip = (id: string) => skipTask.mutate(id);
   const handleResume = (id: string) => resumeTask.mutate(id);
   const handleViewTask = (task: Task) => setSelectedTask(task);
@@ -185,7 +177,7 @@ function AppContent() {
 
   if (sessLoading || tasksLoading) {
     return (
-      <div className={`flex h-screen items-center justify-center ${isDark ? 'bg-slate-900' : 'bg-gradient-to-br from-slate-100 via-white to-indigo-100'}`}>
+      <div className={`flex h-[100dvh] items-center justify-center ${isDark ? 'bg-slate-900' : 'bg-gradient-to-br from-slate-100 via-white to-indigo-100'}`}>
         <div className="flex flex-col items-center gap-4">
           <div className="h-12 w-12 animate-spin rounded-full border-4 border-indigo-400 border-t-transparent" />
           <p className="text-sm text-slate-500 dark:text-slate-400">Chargement des tâches...</p>
@@ -201,7 +193,7 @@ function AppContent() {
 
   if (sessError || tasksError) {
     return (
-      <div className={`flex h-screen items-center justify-center ${isDark ? 'bg-slate-900' : 'bg-gradient-to-br from-slate-100 via-white to-indigo-100'}`}>
+      <div className={`flex h-[100dvh] items-center justify-center ${isDark ? 'bg-slate-900' : 'bg-gradient-to-br from-slate-100 via-white to-indigo-100'}`}>
         <div className="rounded-2xl border border-red-300 dark:border-red-700/50 bg-red-50 dark:bg-red-900/30 px-8 py-6 text-center shadow-sm dark:shadow-red-700/30">
           <p className="text-lg font-semibold text-red-700 dark:text-red-400">Erreur de connexion</p>
           <p className="mt-1 text-sm text-red-500 dark:text-red-400/80">Vérifiez que le backend est lancé.</p>
@@ -214,7 +206,7 @@ function AppContent() {
   const currentTitle = currentSession?.titre || selectedDirectory?.split('/').pop() || selectedDirectory || 'Tous les projets';
 
   return (
-    <div className={`flex flex-col h-[100dvh] overflow-hidden ${isDark ? 'dark bg-slate-900' : 'bg-gradient-to-br from-slate-100 via-white to-indigo-100'}`}>
+    <div className={`relative flex flex-col h-[100dvh] overflow-hidden ${isDark ? 'dark bg-slate-900' : 'bg-gradient-to-br from-slate-100 via-white to-indigo-100'}`}>
       <header className="shrink-0 z-50 isolate border-b border-slate-300/40 dark:border-slate-700/40 bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl shadow-sm shadow-slate-200/20 dark:shadow-slate-700/20">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 py-2.5 gap-3">
           <div className="flex flex-col sm:flex-row sm:items-center gap-2 shrink-0 min-w-0">
@@ -340,13 +332,13 @@ function AppContent() {
       </header>
 
       <main ref={tasksContainerRef} className="flex-1 min-h-0 overflow-y-auto w-full">
-        <div className="sticky top-0 z-30 bg-gradient-to-br from-slate-100 via-white to-indigo-100 dark:bg-slate-800/90 dark:backdrop-blur-xl px-4 pt-3 pb-2">
+        <div className="sticky top-0 z-30 px-4 pt-3 pb-2">
           <div className="mx-auto max-w-7xl">
             <FilterBar selectedFilter={selectedFilter} onFilterChange={setSelectedFilter} />
           </div>
         </div>
 
-        <div className="mx-auto max-w-7xl px-4 pb-24">
+        <div className="mx-auto max-w-7xl px-4 pb-32">
           {effectiveView === 'chat' ? (
             <ChatView
               tasks={normalizedTasks}
@@ -410,10 +402,10 @@ function AppContent() {
 
       {selectedDirectory && (
         <div
-          className="shrink-0 z-40 border-t border-slate-300/60 dark:border-slate-700/60 bg-white/90 dark:bg-slate-800/90 backdrop-blur-xl shadow-[0_-4px_16px_rgba(0,0,0,0.06)] dark:shadow-[0_-4px_16px_rgba(0,0,0,0.3)]"
-          style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+          className="absolute left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-2xl z-40 rounded-2xl border border-slate-200/60 dark:border-slate-700/60 bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl shadow-xl shadow-slate-300/30 dark:shadow-slate-900/60"
+          style={{ bottom: keyboardOffset > 0 ? `${keyboardOffset + 16}px` : 'max(1rem, env(safe-area-inset-bottom))' }}
         >
-          <div className="mx-auto max-w-2xl px-4 py-3">
+          <div className="px-4 py-3">
             <div className="flex items-center gap-2">
               <div className="relative shrink-0" ref={quickAgentRef}>
                 <AgentSelector value={quickAgent} onChange={setQuickAgent} variant="compact" showLabel={false} onClick={() => setQuickAgentOpen(!quickAgentOpen)} />
