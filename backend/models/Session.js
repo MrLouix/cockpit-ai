@@ -2,8 +2,8 @@ import mongoose from 'mongoose';
 
 const sessionSchema = new mongoose.Schema(
   {
-    directory: { type: String, required: true },
-    titre: { type: String, required: true },
+    directory: { type: String, required: true, trim: true },
+    titre: { type: String, required: true, trim: true },
   },
   { timestamps: true }
 );
@@ -11,3 +11,4 @@ const sessionSchema = new mongoose.Schema(
 sessionSchema.index({ directory: 1 });
 
 export const Session = mongoose.model('Session', sessionSchema);
+export default Session;

@@ -1,58 +1,29 @@
-import { spawn } from 'node:child_process';
-import fs from 'node:fs';
-import { getAgent } from '../config/agents.js';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 
-/**
- * Wrapper Hermes — lance `hermes -z "prompt"`.
- * Stdin est ignoré car Hermes ne lit pas stdin en mode -z.
- */
-export async function run(prompt, timeout, cwd = process.cwd()) {
-  const cfg = getAgent('hermes');
-  if (!cfg) {
-    return { success: false, error: 'Hermes CLI is not installed on this machine.' };
+const execAsync = promisify(exec);
+
+export const runHermes = async (prompt, options = {}) => {
+  try {
+    const { timeout = 300000 } = options;
+    const escaped = prompt.replace(/"/g, '\\"');
+    const command = `hermes --prompt "${escaped}"`;
+
+    const { stdout, stderr } = await execAsync(command, {
+      timeout,
+      maxBuffer: 1024 * 1024 * 10,
+    });
+
+    if (stderr && !stdout) {
+      return { success: false, result: '', error: stderr };
+    }
+
+    return { success: true, result: stdout };
+  } catch (err) {
+    return {
+      success: false,
+      result: '',
+      error: err.message || err.stdout || err.stderr || 'Unknown error',
+    };
   }
-
-  const args = [...cfg.args, prompt];
-  const ms = timeout ?? cfg.timeout;
-
-  return new Promise((resolve) => {
-    // Open /dev/null for stdin to prevent "no stdin data received" warning
-    const nullFd = fs.openSync('/dev/null', 'r');
-    
-    const child = spawn(cfg.command, args, {
-      stdio: [nullFd, 'pipe', 'pipe'],
-      timeout: ms,
-      killSignal: 'SIGTERM',
-      cwd,
-    });
-
-    let stdout = '';
-    let stderr = '';
-
-    child.stdout.on('data', (data) => { stdout += data; });
-    child.stderr.on('data', (data) => { stderr += data; });
-
-    child.on('close', (code) => {
-      fs.closeSync(nullFd);
-      if (code !== 0) {
-        resolve({ success: false, error: stderr.trim() || `Agent exited with code ${code}` });
-        return;
-      }
-
-      resolve({
-        success: true,
-        result: stdout.trim(),
-        error: stderr.trim() || undefined,
-      });
-    });
-
-    child.on('error', (err) => {
-      fs.closeSync(nullFd);
-      if (err.code === 'ETIMEDOUT' || err.killed) {
-        resolve({ success: false, error: `Agent timed out after ${ms}ms` });
-        return;
-      }
-      resolve({ success: false, error: err.message || String(err) });
-    });
-  });
-}
+};

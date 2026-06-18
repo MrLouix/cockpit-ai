@@ -2,23 +2,22 @@ import mongoose from 'mongoose';
 
 const subtaskSchema = new mongoose.Schema(
   {
-    prompt: { type: String, default: '' },
+    prompt: { type: String, required: true },
     agent: {
       type: String,
       enum: ['claude', 'vibe', 'antigravity', 'hermes', 'opencode'],
-      default: 'vibe',
+      default: 'claude',
     },
-    executedByAgent: { type: String, default: undefined },
     status: {
       type: String,
       enum: ['pending', 'running', 'success', 'pause', 'failed', 'skipped'],
       default: 'pending',
     },
-    result: { type: String, default: undefined },
-    createdAt: { type: Date, default: Date.now },
+    result: { type: String, default: '' },
+    executedByAgent: { type: String, default: '' },
     endDate: { type: Date, default: undefined },
   },
-  { _id: true }
+  { _id: true, timestamps: true }
 );
 
 const taskSchema = new mongoose.Schema(
@@ -28,18 +27,17 @@ const taskSchema = new mongoose.Schema(
     agent: {
       type: String,
       enum: ['claude', 'vibe', 'antigravity', 'hermes', 'opencode'],
-      default: 'vibe',
+      default: 'claude',
     },
-    executedByAgent: { type: String, default: undefined },
     status: {
       type: String,
       enum: ['pending', 'running', 'success', 'pause', 'failed', 'skipped'],
       default: 'pending',
     },
-    result: { type: String, default: undefined },
-    createdAt: { type: Date, default: Date.now },
-    endDate: { type: Date, default: undefined },
+    result: { type: String, default: '' },
+    executedByAgent: { type: String, default: '' },
     subtasks: { type: [subtaskSchema], default: [] },
+    endDate: { type: Date, default: undefined },
   },
   { timestamps: true }
 );
@@ -49,3 +47,4 @@ taskSchema.index({ status: 1 });
 taskSchema.index({ executedByAgent: 1 });
 
 export const Task = mongoose.model('Task', taskSchema);
+export default Task;

@@ -1,16 +1,28 @@
 {
-  "name": "ai-query-engine",
+  "name": "ai-engine",
   "version": "1.0.0",
-  "description": "AI Engine for AI Query Manager - Sprint 2",
+  "description": "AI Engine for cockpitAI — polls MongoDB and dispatches tasks to CLI agents",
   "type": "module",
-  "main": "runEngine.js",
+  "main": "aiEngine.js",
   "scripts": {
-    "start": "node runEngine.js",
-    "dev": "node --watch runEngine.js"
+    "start": "node aiEngine.js",
+    "dev": "node --watch aiEngine.js",
+    "test": "node --experimental-vm-modules node_modules/.bin/jest --testTimeout=15000"
   },
   "dependencies": {
-    "dotenv": "^16.5.0",
+    "dotenv": "^16.3.1",
     "express": "^4.21.0",
-    "mongoose": "^8.15.0"
+    "mongoose": "^8.0.3"
+  },
+  "devDependencies": {
+    "jest": "^29.0.0",
+    "mongodb-memory-server": "^9.0.0"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": [
+      "**/tests/**/*.test.js"
+    ],
+    "transform": {}
   }
 }

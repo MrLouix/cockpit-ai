@@ -11,3 +11,4 @@ const sessionSchema = new mongoose.Schema(
 sessionSchema.index({ directory: 1 });
 
 export const Session = mongoose.model('Session', sessionSchema);
+export default Session;

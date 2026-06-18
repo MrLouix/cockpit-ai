@@ -1,3 +1,26 @@
+// ---------------------------------------------------------------------------
+// Simple name → CLI command mapping (used by the spec-compliant agent wrappers)
+// ---------------------------------------------------------------------------
+export const AGENT_COMMANDS = {
+  claude: 'claude',
+  vibe: 'vibe',
+  antigravity: 'ag',
+  hermes: 'hermes',
+  opencode: 'opencode',
+};
+
+const DEFAULT_TIMEOUT = 300000; // 5 minutes
+
+export const AGENT_OPTIONS = {
+  claude: { timeout: DEFAULT_TIMEOUT },
+  vibe: { timeout: DEFAULT_TIMEOUT },
+  antigravity: { timeout: DEFAULT_TIMEOUT },
+  hermes: { timeout: DEFAULT_TIMEOUT },
+  opencode: { timeout: DEFAULT_TIMEOUT },
+};
+
+// ---------------------------------------------------------------------------
+
 /**
  * AI Agent CLI configurations — built from actual `--help` output.
  *

@@ -1,218 +1,137 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
-import express from 'express';
-import { Task } from './models/Task.js';
-import { Session } from './models/Session.js';
-import { runAgent, detectSubtasks } from './agents/index.js';
+import { runAgent } from './agents/index.js';
+import Task from './models/Task.js';
 
 dotenv.config();
 
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/aiquerymanager';
-const POLL_INTERVAL = parseInt(process.env.POLL_INTERVAL, 10) || 5000;
-const ENGINE_PORT = parseInt(process.env.ENGINE_PORT, 10) || 3332;
+const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/cockpitai';
+export const POLL_INTERVAL = parseInt(process.env.POLL_INTERVAL, 10) || 5000;
 
-let isMongoConnected = false;
-let currentTaskId = null;
-let startedAt = Date.now();
-let tasksProcessed = 0;
-
-/* ── Express health server ────────────────────────────────── */
-const app = express();
-
-app.get('/api/engine/health', async (_req, res) => {
+export const connectDB = async () => {
   try {
-    const mongoStatus = mongoose.connection.readyState === 1 ? 'connected' : 'disconnected';
-    const pendingCount = await Task.countDocuments({ status: 'pending' });
-    const runningCount = await Task.countDocuments({ status: 'running' });
-
-    res.json({
-      status: 'ok',
-      uptime: Date.now() - startedAt,
-      mongodb: mongoStatus,
-      queue: { pending: pendingCount, running: runningCount },
-      currentTask: currentTaskId,
-      tasksProcessed,
-    });
+    await mongoose.connect(MONGODB_URI);
+    console.log('AI Engine: MongoDB connected');
   } catch (err) {
-    res.status(500).json({ status: 'error', error: err.message });
+    console.error('AI Engine: MongoDB connection error:', err);
+    process.exit(1);
   }
-});
+};
 
-app.listen(ENGINE_PORT, () => {
-  console.log(`[ENGINE] Health server on http://localhost:${ENGINE_PORT}`);
-});
-
-/* ── Agent execution ─────────────────────────────────────── */
-async function processTask(task) {
-  console.log(`[ENGINE] Processing task ${task._id} with agent '${task.agent}'...`);
-  currentTaskId = task._id;
-
-  task.status = 'running';
-  task.updatedAt = new Date();
-  await task.save();
-
-  // Get the session directory for the working directory
-  const session = await Session.findById(task.sessionId);
-  const cwd = session?.directory || process.cwd();
-
-  const result = await runAgent(task.agent, task.prompt, cwd);
-
-  task.executedByAgent = task.agent;
-  task.updatedAt = new Date();
-
-  if (result.success) {
-    const subtasks = detectSubtasks(result.result);
-    if (subtasks && subtasks.length > 0) {
-      console.log(`[ENGINE] Detected ${subtasks.length} subtasks for task ${task._id}`);
-      task.status = 'running';
-      task.result = `[DECOMPOSITION] ${subtasks.length} sous-tâches créées`;
-      
-      for (const stPrompt of subtasks) {
-        task.subtasks.push({
-          prompt: stPrompt,
-          agent: task.agent,
-          status: 'pending',
-          createdAt: new Date(),
-        });
-      }
-    } else {
-      task.result = result.result;
-      task.status = 'success';
-      task.endDate = new Date();
-    }
-  } else {
-    task.result = `Error: ${result.error}`;
-    task.status = 'failed';
-    task.endDate = new Date();
-  }
-
-  tasksProcessed++;
-  currentTaskId = null;
-  await task.save();
-  console.log(`[ENGINE] Task ${task._id} → ${task.status}`);
-}
-
-async function processSubtasks(task) {
+export const processSubtasks = async (task) => {
   if (!task.subtasks || task.subtasks.length === 0) return;
 
-  // Get the session directory for the working directory
-  const session = await Session.findById(task.sessionId);
-  const cwd = session?.directory || process.cwd();
+  for (const subtask of task.subtasks) {
+    if (subtask.status !== 'pending' && subtask.status !== 'running') continue;
 
-  const pendingSubtasks = task.subtasks.filter(
-    (st) => st.status === 'pending' || st.status === 'running'
-  );
+    try {
+      const taskDoc = await Task.findById(task._id);
+      if (!taskDoc) continue;
 
-  if (pendingSubtasks.length === 0) {
-    const allDone = task.subtasks.every(
-      (st) => st.status === 'success' || st.status === 'skipped' || st.status === 'failed'
-    );
-    if (allDone && task.status === 'running') {
-      const successCount = task.subtasks.filter((st) => st.status === 'success').length;
-      task.result = `${successCount}/${task.subtasks.length} subtasks completed.`;
-      task.status = 'success';
-      task.endDate = new Date();
-      await task.save();
-      console.log(`[ENGINE] All subtasks done for task ${task._id} — parent marked success`);
+      const subtaskIndex = taskDoc.subtasks.findIndex(st => st._id.equals(subtask._id));
+      if (subtaskIndex === -1) continue;
+
+      taskDoc.subtasks[subtaskIndex].status = 'running';
+      await taskDoc.save();
+
+      const agentToUse = subtask.agent || task.agent;
+      const result = await runAgent(agentToUse, subtask.prompt);
+
+      const taskDoc2 = await Task.findById(task._id);
+      const subtaskIndex2 = taskDoc2.subtasks.findIndex(st => st._id.equals(subtask._id));
+
+      taskDoc2.subtasks[subtaskIndex2].status = result.success ? 'success' : 'failed';
+      taskDoc2.subtasks[subtaskIndex2].result = result.success ? result.result : result.error;
+      taskDoc2.subtasks[subtaskIndex2].executedByAgent = agentToUse;
+      await taskDoc2.save();
+    } catch (err) {
+      try {
+        const taskDoc = await Task.findById(task._id);
+        if (!taskDoc) continue;
+        const subtaskIndex = taskDoc.subtasks.findIndex(st => st._id.equals(subtask._id));
+        if (subtaskIndex !== -1) {
+          taskDoc.subtasks[subtaskIndex].status = 'failed';
+          taskDoc.subtasks[subtaskIndex].result = err.message;
+          taskDoc.subtasks[subtaskIndex].executedByAgent = subtask.agent || task.agent;
+          await taskDoc.save();
+        }
+      } catch (saveErr) {
+        console.error('Error saving failed subtask:', saveErr);
+      }
     }
-    return;
   }
+};
 
-  for (const subtask of pendingSubtasks) {
-    console.log(`[ENGINE] Subtask: "${subtask.prompt?.slice(0, 60)}..."`);
+export const mainLoop = async () => {
+  try {
+    const tasks = await Task.find({
+      status: { $in: ['pending', 'running'] },
+    }).populate('sessionId');
 
-    subtask.status = 'running';
-    task.updatedAt = new Date();
-    await task.save();
+    console.log(`Found ${tasks.length} tasks to process`);
 
-    const result = await runAgent(subtask.agent || task.agent, subtask.prompt, cwd);
+    for (const task of tasks) {
+      if (task.status === 'pending') {
+        await processTask(task);
+      }
+      await processSubtasks(task);
+    }
+  } catch (err) {
+    console.error('Error in main loop:', err);
+  }
+};
+
+const shutdown = async (signal) => {
+  console.log(`\nAI Engine: Shutting down (${signal})...`);
+  await mongoose.disconnect();
+  process.exit(0);
+};
+
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+
+const startEngine = async () => {
+  await connectDB();
+  console.log('AI Engine started');
+  console.log(`Polling interval: ${POLL_INTERVAL / 1000}s`);
+
+  await mainLoop();
+  setInterval(mainLoop, POLL_INTERVAL);
+};
+
+if (process.argv[1] && process.argv[1].endsWith('aiEngine.js')) {
+  startEngine().catch(err => {
+    console.error('Failed to start AI Engine:', err);
+    process.exit(1);
+  });
+}
+
+export const processTask = async (task) => {
+  if (task.status !== 'pending' && task.status !== 'running') return;
+
+  await Task.findByIdAndUpdate(task._id, { status: 'running' });
+
+  try {
+    const result = await runAgent(task.agent, task.prompt);
 
     if (result.success) {
-      subtask.status = 'success';
-      subtask.result = result.result;
-      subtask.executedByAgent = subtask.agent || task.agent;
+      await Task.findByIdAndUpdate(task._id, {
+        status: 'success',
+        result: result.result,
+        executedByAgent: task.agent,
+      });
     } else {
-      subtask.status = 'failed';
-      subtask.result = `Error: ${result.error}`;
-      subtask.executedByAgent = subtask.agent || task.agent;
+      await Task.findByIdAndUpdate(task._id, {
+        status: 'failed',
+        result: result.error,
+        executedByAgent: task.agent,
+      });
     }
-
-    subtask.endDate = new Date();
-    task.updatedAt = new Date();
-    await task.save();
-    console.log(`[ENGINE] Subtask → ${subtask.status}`);
+  } catch (err) {
+    await Task.findByIdAndUpdate(task._id, {
+      status: 'failed',
+      result: err.message,
+      executedByAgent: task.agent,
+    });
   }
-
-  // Check again after processing all pending subtasks
-  const remainingPending = task.subtasks.filter(
-    (st) => st.status === 'pending' || st.status === 'running'
-  );
-  if (remainingPending.length === 0) {
-    const allDone = task.subtasks.every(
-      (st) => st.status === 'success' || st.status === 'skipped' || st.status === 'failed'
-    );
-    if (allDone && task.status === 'running') {
-      const successCount = task.subtasks.filter((st) => st.status === 'success').length;
-      task.result = `${successCount}/${task.subtasks.length} subtasks completed.`;
-      task.status = 'success';
-      task.endDate = new Date();
-      await task.save();
-      console.log(`[ENGINE] All subtasks done for task ${task._id} — parent marked success`);
-    }
-  }
-}
-
-/* ── Main loop ───────────────────────────────────────────── */
-async function main() {
-  console.log('[ENGINE] Connecting to MongoDB...');
-  await mongoose.connect(MONGODB_URI);
-  isMongoConnected = true;
-  console.log('[ENGINE] Connected to MongoDB');
-
-  const shutdown = async (signal) => {
-    console.log(`\n[ENGINE] Received ${signal}, shutting down...`);
-    if (isMongoConnected && mongoose.connection.readyState === 1) {
-      await mongoose.disconnect();
-      console.log('[ENGINE] MongoDB disconnected');
-    }
-    process.exit(0);
-  };
-
-  process.on('SIGINT', () => shutdown('SIGINT'));
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
-
-  console.log(`[ENGINE] Polling for tasks every ${POLL_INTERVAL}ms...`);
-
-  while (true) {
-    try {
-      const activeTasks = await Task.find({
-        status: { $in: ['pending', 'running'] }
-      }).sort({ createdAt: 1 });
-
-      for (const task of activeTasks) {
-        if (task.status === 'pending') {
-          await processTask(task);
-        }
-
-        if (task.status === 'running') {
-          if (task.subtasks && task.subtasks.length > 0) {
-            await processSubtasks(task);
-          } else {
-            console.log(`[ENGINE] Found stuck running task ${task._id} without subtasks. Resetting to pending.`);
-            task.status = 'pending';
-            await task.save();
-          }
-        }
-      }
-    } catch (err) {
-      console.error(`[ENGINE] Error in main loop: ${err.message}`);
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL));
-  }
-}
-
-main().catch((err) => {
-  console.error(`[ENGINE] Fatal error: ${err.message}`);
-  process.exit(1);
-});
+};
