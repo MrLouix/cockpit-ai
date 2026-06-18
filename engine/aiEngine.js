@@ -1,12 +1,14 @@
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
-import { runAgent } from './agents/index.js';
+import { runAgent, detectSubtasks } from './agents/index.js';
 import Task from './models/Task.js';
+import express from 'express';
 
 dotenv.config();
 
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/cockpitai';
 export const POLL_INTERVAL = parseInt(process.env.POLL_INTERVAL, 10) || 5000;
+export const ENGINE_PORT = parseInt(process.env.ENGINE_PORT, 10) || 3332;
 
 export const connectDB = async () => {
   try {
@@ -21,8 +23,12 @@ export const connectDB = async () => {
 export const processSubtasks = async (task) => {
   if (!task.subtasks || task.subtasks.length === 0) return;
 
+  let allSubtasksCompleted = true;
+  
   for (const subtask of task.subtasks) {
     if (subtask.status !== 'pending' && subtask.status !== 'running') continue;
+    
+    allSubtasksCompleted = false;
 
     try {
       const taskDoc = await Task.findById(task._id);
@@ -57,6 +63,21 @@ export const processSubtasks = async (task) => {
         }
       } catch (saveErr) {
         console.error('Error saving failed subtask:', saveErr);
+      }
+    }
+  }
+
+  if (allSubtasksCompleted) {
+    const taskDoc = await Task.findById(task._id);
+    if (taskDoc) {
+      const hasPendingOrRunning = taskDoc.subtasks.some(st => st.status === 'pending' || st.status === 'running');
+      if (!hasPendingOrRunning) {
+        const allSuccess = taskDoc.subtasks.every(st => st.status === 'success');
+        await Task.findByIdAndUpdate(task._id, {
+          status: allSuccess ? 'success' : 'failed',
+          endDate: new Date()
+        });
+        console.log(`All subtasks completed for task ${task._id}, marked as ${allSuccess ? 'success' : 'failed'}`);
       }
     }
   }
@@ -95,6 +116,29 @@ const startEngine = async () => {
   console.log('AI Engine started');
   console.log(`Polling interval: ${POLL_INTERVAL / 1000}s`);
 
+  const healthApp = express();
+  healthApp.get('/health', async (_req, res) => {
+    try {
+      const [pendingCount, runningCount, totalCount] = await Promise.all([
+        Task.countDocuments({ status: 'pending' }),
+        Task.countDocuments({ status: 'running' }),
+        Task.countDocuments({}),
+      ]);
+      res.json({
+        status: 'ok',
+        timestamp: new Date(),
+        engine: 'ai-query-manager',
+        tasks: { pending: pendingCount, running: runningCount, total: totalCount },
+      });
+    } catch (err) {
+      res.status(500).json({ status: 'error', error: err.message });
+    }
+  });
+
+  healthApp.listen(ENGINE_PORT, () => {
+    console.log(`Engine health endpoint running on port ${ENGINE_PORT}`);
+  });
+
   await mainLoop();
   setInterval(mainLoop, POLL_INTERVAL);
 };
@@ -115,11 +159,31 @@ export const processTask = async (task) => {
     const result = await runAgent(task.agent, task.prompt);
 
     if (result.success) {
-      await Task.findByIdAndUpdate(task._id, {
-        status: 'success',
-        result: result.result,
-        executedByAgent: task.agent,
-      });
+      const subtasks = detectSubtasks(result.result);
+      
+      if (subtasks && subtasks.length > 0) {
+        await Task.findByIdAndUpdate(task._id, {
+          status: 'running',
+          result: result.result,
+          executedByAgent: task.agent,
+          $push: {
+            subtasks: {
+              $each: subtasks.map(prompt => ({
+                prompt,
+                agent: task.agent,
+                status: 'pending'
+              }))
+            }
+          }
+        });
+        console.log(`Decomposition detected for task ${task._id}: ${subtasks.length} subtasks created`);
+      } else {
+        await Task.findByIdAndUpdate(task._id, {
+          status: 'success',
+          result: result.result,
+          executedByAgent: task.agent,
+        });
+      }
     } else {
       await Task.findByIdAndUpdate(task._id, {
         status: 'failed',
