@@ -1,13 +1,20 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { getAgent } from '../config/agents.js';
 
 const execAsync = promisify(exec);
 
 export const runHermes = async (prompt, options = {}) => {
   try {
     const { timeout = 300000 } = options;
+    const agentConfig = getAgent('hermes');
+    
+    if (!agentConfig) {
+      throw new Error('Hermes agent is not configured or installed');
+    }
+    
     const escaped = prompt.replace(/"/g, '\\"');
-    const command = `hermes --prompt "${escaped}"`;
+    const command = `${agentConfig.command} -z "${escaped}"`;
 
     const { stdout, stderr } = await execAsync(command, {
       timeout,

@@ -386,7 +386,7 @@ function AppContent() {
       </main>
 
       {selectedDirectory && (
-        <div className="fixed bottom-4 left-4 right-4 sm:left-6 sm:right-6 md:left-8 md:right-8 lg:left-1/2 lg:-translate-x-1/2 lg:max-w-2xl z-40 rounded-2xl border border-slate-300/60 dark:border-slate-700/60 bg-white/90 dark:bg-slate-800/90 backdrop-blur-xl shadow-lg shadow-slate-300/30 dark:shadow-slate-700/30">
+        <div className="fixed bottom-4 left-4 right-4 sm:left-6 sm:right-6 md:left-8 md:right-8 lg:left-1/2 lg:-translate-x-1/2 lg:max-w-2xl z-40 rounded-2xl border border-slate-300/60 dark:border-slate-700/60 bg-white/90 dark:bg-slate-800/90 backdrop-blur-xl shadow-lg shadow-slate-300/30 dark:shadow-slate-700/30 transform translate-z-0">
           <div className="px-4 py-3">
             <div className="flex items-center gap-2">
               <div className="relative shrink-0" ref={quickAgentRef}>

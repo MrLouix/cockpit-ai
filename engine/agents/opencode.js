@@ -1,13 +1,20 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { getAgent } from '../config/agents.js';
 
 const execAsync = promisify(exec);
 
 export const runOpencode = async (prompt, options = {}) => {
   try {
     const { timeout = 300000 } = options;
+    const agentConfig = getAgent('opencode');
+    
+    if (!agentConfig) {
+      throw new Error('Opencode agent is not configured or installed');
+    }
+    
     const escaped = prompt.replace(/"/g, '\\"');
-    const command = `opencode --prompt "${escaped}"`;
+    const command = `${agentConfig.command} run --format json "${escaped}"`;
 
     const { stdout, stderr } = await execAsync(command, {
       timeout,
