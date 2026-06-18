@@ -51,8 +51,8 @@ const agents = {
   // Source: hermes --help
   hermes: {
     command: '/home/ai_agent/.local/bin/hermes',
-    args: ['-z'],               // hermes -z "your prompt here"
-    timeout: 300_000,            // 5 min
+    args: ['-z', '--accept-hooks'],  // hermes -z --accept-hooks "your prompt here"
+    timeout: 300_000,                 // 5 min
     outputFmt: 'text',
     installed: true,
   },
@@ -63,8 +63,9 @@ const agents = {
   // Source: vibe --help
   vibe: {
     command: '/home/ai_agent/.local/bin/vibe',
-    args: ['-p'],                  // vibe -p "prompt" --output json
-    jsonArgs: ['--output', 'json'], // replaces --output text when outputFmt='json'
+    args: ['-p'],                       // vibe -p "prompt" --auto-approve --output json
+    argsAfterPrompt: ['--auto-approve'], // args that come after the prompt
+    jsonArgs: ['--output', 'json'],     // replaces --output text when outputFmt='json'
     timeout: 300_000,
     outputFmt: 'text',
     installed: true,
@@ -76,7 +77,7 @@ const agents = {
   // Source: claude --help
   claude: {
     command: 'claude',
-    args: ['-p'],                  // claude -p --output-format json "prompt"
+    args: ['-p', '--dangerously-skip-permissions'],  // claude -p --dangerously-skip-permissions "prompt"
     jsonArgs: ['--output-format', 'json'],
     timeout: 300_000,
     outputFmt: 'json',
@@ -89,7 +90,7 @@ const agents = {
   // Source: agy --help
   antigravity: {
     command: '/home/ai_agent/.local/bin/agy',
-    args: ['--print'],
+    args: ['--print', '--dangerously-skip-permissions'],  // agy --print --dangerously-skip-permissions "prompt"
     timeout: 300_000,
     outputFmt: 'text',
     installed: true,
@@ -101,7 +102,7 @@ const agents = {
   // Source: opencode run --help
   opencode: {
     command: 'opencode',
-    args: ['run'],                 // opencode run --format json "prompt"
+    args: ['run', '--dangerously-skip-permissions'],  // opencode run --dangerously-skip-permissions "prompt"
     jsonArgs: ['--format', 'json'],
     timeout: 300_000,
     outputFmt: 'text',
@@ -149,8 +150,13 @@ function buildArgs(agentName, prompt, useJson = false) {
     finalArgs.push(...cfg.jsonArgs);
   }
   
-  // Append prompt as last argument
+  // Append prompt
   finalArgs.push(prompt);
+  
+  // Add args that come after the prompt (e.g., for vibe: --auto-approve)
+  if (cfg.argsAfterPrompt) {
+    finalArgs.push(...cfg.argsAfterPrompt);
+  }
   
   return finalArgs;
 }
