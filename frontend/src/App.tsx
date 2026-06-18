@@ -15,13 +15,14 @@ import { useDarkMode } from './hooks/useDarkMode';
 import { FilterBar } from './components/FilterBar';
 import { TaskTable } from './components/TaskTable';
 import { TaskCard } from './components/TaskCard';
+import { ChatView } from './components/ChatView';
 import { TaskDetailModal } from './components/TaskDetailModal';
 import { NewSessionModal } from './components/NewSessionModal';
 import { NewTaskModal } from './components/NewTaskModal';
 import { LogoPunchline } from './components/LogoPunchline';
 import { ThemeToggle } from './components/ThemeToggle';
 import { AgentSelector, getAgentConfig } from './components/AgentSelector';
-import { FolderOpen, Plus, Send, Menu, ChevronDown } from 'lucide-react';
+import { FolderOpen, Plus, Send, Menu, ChevronDown, MessageSquare } from 'lucide-react';
 import type { AgentType } from './types';
 
 const AGENTS: { id: AgentType; label: string }[] = [
@@ -55,7 +56,10 @@ function matchesFilter(status: string, filter: FilterMode): boolean {
 
 function AppContent() {
   const { isDark } = useDarkMode();
-  const [viewMode, setViewMode] = useState<'table' | 'cards'>('cards');
+  const [viewMode, setViewMode] = useState<'table' | 'cards' | 'chat'>(
+    () => (localStorage.getItem('cockpitai_viewmode') as 'table' | 'cards' | 'chat') || 'cards'
+  );
+  useReactEffect(() => { localStorage.setItem('cockpitai_viewmode', viewMode); }, [viewMode]);
   const [selectedDirectory, setSelectedDirectory] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<FilterMode>('');
   const [showNewSession, setShowNewSession] = useState(false);
@@ -102,7 +106,7 @@ function AppContent() {
     return () => window.removeEventListener('resize', check);
   }, []);
 
-  const effectiveView = isMobile ? 'cards' : viewMode;
+  const effectiveView = isMobile ? (viewMode === 'chat' ? 'chat' : 'cards') : viewMode;
 
   const { data: sessions = [], isLoading: sessLoading, error: sessError } = useSessions();
   const { data: tasks = [], isLoading: tasksLoading, error: tasksError } = useTasks();
@@ -310,6 +314,17 @@ function AppContent() {
               >
                 Cartes
               </button>
+              <button
+                onClick={() => setViewMode('chat')}
+                className={`rounded-md px-2.5 py-1 text-xs font-medium transition-all flex items-center gap-1 ${
+                  viewMode === 'chat'
+                    ? 'bg-white dark:bg-slate-600 text-slate-800 dark:text-slate-200 shadow-sm ring-1 ring-slate-300/60 dark:ring-slate-600/60'
+                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                }`}
+              >
+                <MessageSquare className="h-3 w-3" />
+                Chat
+              </button>
             </div>
             {!selectedDirectory && (
               <button
@@ -332,7 +347,15 @@ function AppContent() {
         </div>
 
         <div className="mx-auto max-w-7xl px-4 pb-24">
-          {normalizedTasks.length === 0 ? (
+          {effectiveView === 'chat' ? (
+            <ChatView
+              tasks={normalizedTasks}
+              onSkip={handleSkip}
+              onResume={handleResume}
+              onDelete={handleDelete}
+              onClick={handleViewTask}
+            />
+          ) : normalizedTasks.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-20">
               <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-100 to-violet-100 dark:from-slate-700 dark:to-slate-600 text-indigo-500 dark:text-indigo-400 shadow-inner">
                 <FolderOpen className="h-10 w-10" />
@@ -422,15 +445,18 @@ function AppContent() {
                 onChange={(e) => setQuickPrompt(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter' && quickPrompt.trim()) handleQuickSend(); }}
                 placeholder="Décrivez la tâche…"
-                className="flex-1 rounded-lg border border-slate-300/80 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2 text-sm text-slate-700 dark:text-slate-300 shadow-sm transition focus:border-indigo-300 dark:focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-700/50"
+                className="flex-1 rounded-2xl border border-slate-300/80 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2 text-sm text-slate-700 dark:text-slate-300 shadow-sm transition focus:border-indigo-300 dark:focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-700/50"
               />
               <button
                 onClick={handleQuickSend}
-                disabled={!quickPrompt.trim()}
+                disabled={!quickPrompt.trim() || createTask.isPending}
                 className="rounded-lg bg-gradient-to-r from-violet-500 to-indigo-600 p-2 text-white shadow-sm transition hover:shadow-md disabled:opacity-30 active:scale-95 dark:shadow-indigo-700/50 cursor-pointer"
                 aria-label="Envoyer"
               >
-                <Send className="h-4 w-4" />
+                {createTask.isPending
+                  ? <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  : <Send className="h-4 w-4" />
+                }
               </button>
             </div>
           </div>
