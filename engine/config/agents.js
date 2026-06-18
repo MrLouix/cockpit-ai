@@ -51,7 +51,7 @@ const agents = {
   // Source: hermes --help
   hermes: {
     command: '/home/ai_agent/.local/bin/hermes',
-    args: ['-z', '--accept-hooks'],  // hermes -z --accept-hooks "your prompt here"
+    args: ['--accept-hooks', '-z'],  // hermes --accept-hooks -z "your prompt here"
     timeout: 300_000,                 // 5 min
     outputFmt: 'text',
     installed: true,
