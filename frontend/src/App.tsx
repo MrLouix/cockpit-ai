@@ -51,7 +51,8 @@ function AppContent() {
     () => (localStorage.getItem('cockpitai_viewmode') as 'table' | 'cards' | 'chat') || 'cards'
   );
   useReactEffect(() => { localStorage.setItem('cockpitai_viewmode', viewMode); }, [viewMode]);
-  const [selectedDirectory, setSelectedDirectory] = useState('');
+  const [selectedSessionId, setSelectedSessionId] = useState('');
+  const [newChatDirectory, setNewChatDirectory] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<FilterMode>('');
   const [showNewSession, setShowNewSession] = useState(false);
   const [showNewTask, setShowNewTask] = useState(false);
@@ -70,7 +71,9 @@ function AppContent() {
   const [quickPrompt, setQuickPrompt] = useState('');
   const [quickAgent, setQuickAgent] = useState<AgentType>('hermes');
   const tasksContainerRef = useRef<HTMLDivElement>(null);
-  const prevSelectedDirectory = useRef('');
+  const touchStartX = useRef(0);
+  const touchStartY = useRef(0);
+  const prevSelectedSessionId = useRef('');
 
   const [isMobile, setIsMobile] = useState(false);
   useReactEffect(() => {
@@ -103,11 +106,10 @@ function AppContent() {
     return m;
   }, [sessions]);
 
-  const selectedSessionId = useMemo(() => {
-    if (!selectedDirectory) return '';
-    const found = sessions.find((s: Session) => s.directory === selectedDirectory);
-    return found?._id ?? '';
-  }, [sessions, selectedDirectory]);
+  const selectedDirectory = useMemo(() => {
+    if (!selectedSessionId) return '';
+    return sessions.find((s: Session) => s._id === selectedSessionId)?.directory ?? '';
+  }, [sessions, selectedSessionId]);
 
   const normalizedTasks = useMemo(() => {
     return tasks
@@ -116,14 +118,11 @@ function AppContent() {
         sessionIdStr: typeof t.sessionId === 'string' ? t.sessionId : (t.sessionId as any)?._id || '',
       }))
       .filter((t: { sessionIdStr: string; status: TaskStatus } & Task) => {
-        if (selectedDirectory) {
-          const sess = sessionMap[t.sessionIdStr];
-          if (!sess || (sess.directory || '') !== selectedDirectory) return false;
-        }
+        if (selectedSessionId && t.sessionIdStr !== selectedSessionId) return false;
         if (!matchesFilter(t.status, selectedFilter)) return false;
         return true;
       });
-  }, [tasks, selectedDirectory, selectedFilter, sessionMap]);
+  }, [tasks, selectedSessionId, selectedFilter]);
 
   const scrollToBottom = () => {
     requestAnimationFrame(() => {
