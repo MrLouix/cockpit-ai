@@ -1,5 +1,4 @@
-import { useMemo, useState, useRef, useCallback, useEffect as useReactEffect } from 'react';
-import { useClickOutside } from './hooks/useClickOutside';
+import { useMemo, useState, useRef, useEffect as useReactEffect } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { Task, Session, TaskStatus } from './types';
 import {
@@ -20,19 +19,10 @@ import { ChatView } from './components/ChatView';
 import { TaskDetailModal } from './components/TaskDetailModal';
 import { NewSessionModal } from './components/NewSessionModal';
 import { NewTaskModal } from './components/NewTaskModal';
-import { LogoPunchline } from './components/LogoPunchline';
-import { ThemeToggle } from './components/ThemeToggle';
-import { AgentSelector, getAgentConfig } from './components/AgentSelector';
-import { FolderOpen, Plus, Send, Menu, ChevronDown, MessageSquare } from 'lucide-react';
+import { AppHeader } from './components/AppHeader';
+import { QuickInputBar } from './components/QuickInputBar';
+import { FolderOpen, Plus } from 'lucide-react';
 import type { AgentType } from './types';
-
-const AGENTS: { id: AgentType; label: string }[] = [
-  { id: 'hermes', label: 'Hermes' },
-  { id: 'vibe', label: 'Vibe' },
-  { id: 'claude', label: 'Claude' },
-  { id: 'opencode', label: 'OpenCode' },
-  { id: 'antigravity', label: 'Antigravity' },
-];
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -66,7 +56,6 @@ function AppContent() {
   const [showNewSession, setShowNewSession] = useState(false);
   const [showNewTask, setShowNewTask] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [burgerOpen, setBurgerOpen] = useState(false);
 
   const [keyboardOffset, setKeyboardOffset] = useState(0);
   useReactEffect(() => {
@@ -80,15 +69,8 @@ function AppContent() {
 
   const [quickPrompt, setQuickPrompt] = useState('');
   const [quickAgent, setQuickAgent] = useState<AgentType>('hermes');
-  const [quickAgentOpen, setQuickAgentOpen] = useState(false);
-  const quickAgentRef = useRef<HTMLDivElement>(null);
-  const quickInputRef = useRef<HTMLInputElement>(null);
   const tasksContainerRef = useRef<HTMLDivElement>(null);
   const prevSelectedDirectory = useRef('');
-
-  const burgerRef = useRef<HTMLDivElement>(null);
-  useClickOutside(burgerRef, useCallback(() => setBurgerOpen(false), []), burgerOpen);
-  useClickOutside(quickAgentRef, useCallback(() => setQuickAgentOpen(false), []), quickAgentOpen);
 
   const [isMobile, setIsMobile] = useState(false);
   useReactEffect(() => {
@@ -202,134 +184,21 @@ function AppContent() {
     );
   }
 
-  const currentSession = sessions.find(s => s.directory === selectedDirectory);
+  const currentSession = sessions.find((s: Session) => s.directory === selectedDirectory);
   const currentTitle = currentSession?.titre || selectedDirectory?.split('/').pop() || selectedDirectory || 'Tous les projets';
 
   return (
     <div className={`relative flex flex-col h-[100dvh] overflow-hidden ${isDark ? 'dark bg-slate-900' : 'bg-gradient-to-br from-slate-100 via-white to-indigo-100'}`}>
-      <header className="shrink-0 z-50 isolate border-b border-slate-300/40 dark:border-slate-700/40 bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl shadow-sm shadow-slate-200/20 dark:shadow-slate-700/20">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 py-2.5 gap-3">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-2 shrink-0 min-w-0">
-            <div className="flex items-center gap-2">
-              <LogoPunchline />
-              <h1 className="text-base font-bold tracking-tight truncate max-w-[160px] sm:max-w-none">
-                <span className="bg-gradient-to-r from-violet-600 to-indigo-600 bg-clip-text text-transparent">cockpit</span>
-                <span className="text-slate-600 dark:text-slate-400">AI</span>
-              </h1>
-              <div className="relative ml-2" ref={burgerRef}>
-                <button
-                  onClick={() => setBurgerOpen(!burgerOpen)}
-                  className="flex items-center gap-2 rounded-lg border border-slate-300/80 dark:border-slate-700/80 bg-white/60 dark:bg-slate-800/60 px-2.5 py-1.5 text-sm font-medium text-slate-700 dark:text-slate-300 shadow-sm transition-all hover:border-indigo-300 dark:hover:border-indigo-500 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50/40 dark:hover:bg-slate-700/40"
-                >
-                  <Menu className="h-4 w-4" />
-                  <span className="max-w-48 truncate">{currentTitle}</span>
-                  <ChevronDown className="h-3 w-3 ml-auto shrink-0" />
-                </button>
-
-                {selectedDirectory && (
-                  <span className="hidden sm:inline-block text-sm font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-100 dark:bg-slate-700 px-2 py-0.5 rounded-lg truncate max-w-[200px]">
-                    {selectedDirectory}
-                  </span>
-                )}
-
-                {burgerOpen && (
-                  <div className="absolute left-0 top-full mt-2 w-64 rounded-xl border border-slate-300/80 dark:border-slate-700/80 bg-white dark:bg-slate-800 shadow-xl shadow-slate-200/40 dark:shadow-slate-700/40 overflow-hidden z-[60]">
-                    <div className="py-2">
-                      <div className="px-4 pb-2 pt-1">
-                        <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Projets</p>
-                      </div>
-                      <button
-                        onClick={() => { setSelectedDirectory(''); setBurgerOpen(false); }}
-                        className={`w-full text-left px-4 py-2 text-sm transition-colors ${
-                          !selectedDirectory
-                            ? 'bg-indigo-50 dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 font-medium'
-                            : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50'
-                        }`}
-                      >
-                        Tous les projets
-                      </button>
-                      {sessions
-                        .filter(s => s.directory)
-                        .map((s) => {
-                          const isActive = selectedDirectory === s.directory;
-                          const title = s.titre || s.directory.split('/').pop() || s.directory;
-                          return (
-                            <button
-                              key={s._id}
-                              onClick={() => { setSelectedDirectory(s.directory); setBurgerOpen(false); }}
-                              className={`w-full text-left px-4 py-2 text-sm transition-colors ${
-                                isActive
-                                  ? 'bg-indigo-50 dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 font-medium'
-                                  : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50'
-                              }`}
-                            >
-                              <span className="truncate">{title}</span>
-                            </button>
-                          );
-                        })}
-                      <div className="my-1 border-t border-slate-200 dark:border-slate-700/50" />
-                      <button
-                        onClick={() => { setShowNewSession(true); setBurgerOpen(false); }}
-                        className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-indigo-600 dark:text-indigo-400 transition-colors hover:bg-indigo-50 dark:hover:bg-slate-700/50"
-                      >
-                        <Plus className="h-4 w-4 shrink-0" />
-                        Nouveau projet
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-            {selectedDirectory && (
-              <span className="sm:hidden text-sm font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-100 dark:bg-slate-700 px-2 py-0.5 rounded-lg truncate">
-                {selectedDirectory}
-              </span>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            <ThemeToggle />
-            <div className="hidden sm:flex items-center gap-0.5 rounded-lg bg-slate-200/80 dark:bg-slate-700/80 p-0.5">
-              <button
-                onClick={() => setViewMode('table')}
-                className={`rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
-                  viewMode === 'table' ? 'bg-white dark:bg-slate-600 text-slate-800 dark:text-slate-200 shadow-sm ring-1 ring-slate-300/60 dark:ring-slate-600/60' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                }`}
-              >
-                Tableau
-              </button>
-              <button
-                onClick={() => setViewMode('cards')}
-                className={`rounded-md px-2.5 py-1 text-xs font-medium transition-all ${
-                  viewMode === 'cards' ? 'bg-white dark:bg-slate-600 text-slate-800 dark:text-slate-200 shadow-sm ring-1 ring-slate-300/60 dark:ring-slate-600/60' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                }`}
-              >
-                Cartes
-              </button>
-              <button
-                onClick={() => setViewMode('chat')}
-                className={`rounded-md px-2.5 py-1 text-xs font-medium transition-all flex items-center gap-1 ${
-                  viewMode === 'chat'
-                    ? 'bg-white dark:bg-slate-600 text-slate-800 dark:text-slate-200 shadow-sm ring-1 ring-slate-300/60 dark:ring-slate-600/60'
-                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
-                }`}
-              >
-                <MessageSquare className="h-3 w-3" />
-                Chat
-              </button>
-            </div>
-            {!selectedDirectory && (
-              <button
-                onClick={() => setShowNewTask(true)}
-                className="group flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-violet-500 to-indigo-600 px-3 py-1.5 text-sm font-medium text-white shadow-md shadow-indigo-200/50 dark:shadow-indigo-700/50 transition-all hover:shadow-lg hover:shadow-indigo-300/50 dark:hover:shadow-indigo-500/50"
-              >
-                <Plus className="h-3.5 w-3.5 transition-transform group-hover:scale-110" />
-                <span className="hidden sm:inline">Nouvelle tâche</span>
-              </button>
-            )}
-          </div>
-        </div>
-      </header>
+      <AppHeader
+        currentTitle={currentTitle}
+        sessions={sessions}
+        selectedDirectory={selectedDirectory}
+        onSelectDirectory={setSelectedDirectory}
+        viewMode={viewMode}
+        onViewChange={setViewMode}
+        onNewSession={() => setShowNewSession(true)}
+        onNewTask={() => setShowNewTask(true)}
+      />
 
       <main ref={tasksContainerRef} className="flex-1 min-h-0 overflow-y-auto w-full">
         <div className="sticky top-0 z-30 px-4 pt-3 pb-2">
@@ -401,61 +270,15 @@ function AppContent() {
       </main>
 
       {selectedDirectory && (
-        <div
-          className="absolute left-1/2 -translate-x-1/2 w-[calc(100%-2rem)] max-w-2xl z-40 rounded-2xl border border-slate-200/60 dark:border-slate-700/60 bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl shadow-xl shadow-slate-300/30 dark:shadow-slate-900/60"
-          style={{ bottom: keyboardOffset > 0 ? `${keyboardOffset + 16}px` : 'max(1rem, env(safe-area-inset-bottom))' }}
-        >
-          <div className="px-4 py-3">
-            <div className="flex items-center gap-2">
-              <div className="relative shrink-0" ref={quickAgentRef}>
-                <AgentSelector value={quickAgent} onChange={setQuickAgent} variant="compact" showLabel={false} onClick={() => setQuickAgentOpen(!quickAgentOpen)} />
-                {quickAgentOpen && (
-                  <div className="absolute bottom-full left-0 mb-2 w-48 rounded-xl border border-slate-300/80 dark:border-slate-600 bg-white dark:bg-slate-700 shadow-xl shadow-slate-200/40 dark:shadow-slate-700/40 overflow-hidden z-[60]">
-                    <div className="py-1">
-                      {AGENTS.map((a) => {
-                        const AgentIcon = getAgentConfig(a.id)?.icon || Plus;
-                        return (
-                          <button
-                            key={a.id}
-                            onClick={() => { setQuickAgent(a.id); setQuickAgentOpen(false); }}
-                            className={`w-full flex items-center gap-2 px-3 py-2 text-sm transition-colors ${
-                              quickAgent === a.id
-                                ? 'bg-indigo-50 dark:bg-slate-600 text-indigo-700 dark:text-indigo-300 font-medium'
-                                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-600/50'
-                            }`}
-                          >
-                            <AgentIcon className="h-4 w-4" />
-                            <span>{a.label}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-              <input
-                ref={quickInputRef}
-                type="text"
-                value={quickPrompt}
-                onChange={(e) => setQuickPrompt(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter' && quickPrompt.trim()) handleQuickSend(); }}
-                placeholder="Décrivez la tâche…"
-                className="flex-1 rounded-2xl border border-slate-300/80 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2 text-sm text-slate-700 dark:text-slate-300 shadow-sm transition focus:border-indigo-300 dark:focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-700/50"
-              />
-              <button
-                onClick={handleQuickSend}
-                disabled={!quickPrompt.trim() || createTask.isPending}
-                className="rounded-lg bg-gradient-to-r from-violet-500 to-indigo-600 p-2 text-white shadow-sm transition hover:shadow-md disabled:opacity-30 active:scale-95 dark:shadow-indigo-700/50 cursor-pointer"
-                aria-label="Envoyer"
-              >
-                {createTask.isPending
-                  ? <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                  : <Send className="h-4 w-4" />
-                }
-              </button>
-            </div>
-          </div>
-        </div>
+        <QuickInputBar
+          agent={quickAgent}
+          onAgentChange={setQuickAgent}
+          prompt={quickPrompt}
+          onPromptChange={setQuickPrompt}
+          onSend={handleQuickSend}
+          isPending={createTask.isPending}
+          keyboardOffset={keyboardOffset}
+        />
       )}
 
       {showNewSession && (
