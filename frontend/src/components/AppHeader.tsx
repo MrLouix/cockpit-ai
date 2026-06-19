@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { Menu, ChevronDown, Plus, MessageSquare } from 'lucide-react';
+import { Menu, ChevronDown, Plus, MessageSquare, Folder } from 'lucide-react';
 import type { Session } from '../types';
 import { useClickOutside } from '../hooks/useClickOutside';
 import { LogoPunchline } from './LogoPunchline';
@@ -8,21 +8,31 @@ import { ThemeToggle } from './ThemeToggle';
 interface AppHeaderProps {
   currentTitle: string;
   sessions: Session[];
+  selectedSessionId: string;
   selectedDirectory: string;
-  onSelectDirectory: (dir: string) => void;
+  onSelectSession: (id: string) => void;
+  onNewProject: () => void;
+  onNewChat: (dir: string) => void;
   viewMode: 'table' | 'cards' | 'chat';
   onViewChange: (mode: 'table' | 'cards' | 'chat') => void;
-  onNewSession: () => void;
   onNewTask: () => void;
 }
 
 export const AppHeader: React.FC<AppHeaderProps> = ({
-  currentTitle, sessions, selectedDirectory, onSelectDirectory,
-  viewMode, onViewChange, onNewSession, onNewTask,
+  currentTitle, sessions, selectedSessionId, selectedDirectory,
+  onSelectSession, onNewProject, onNewChat,
+  viewMode, onViewChange, onNewTask,
 }) => {
   const [burgerOpen, setBurgerOpen] = useState(false);
   const burgerRef = useRef<HTMLDivElement>(null);
   useClickOutside(burgerRef, () => setBurgerOpen(false), burgerOpen);
+
+  const byDirectory = sessions
+    .filter(s => s.directory)
+    .reduce((acc, s) => {
+      (acc[s.directory] ??= []).push(s);
+      return acc;
+    }, {} as Record<string, Session[]>);
 
   return (
     <header className="shrink-0 z-50 isolate border-b border-slate-300/40 dark:border-slate-700/40 bg-white/80 dark:bg-slate-800/80 backdrop-blur-xl shadow-sm shadow-slate-200/20 dark:shadow-slate-700/20">
@@ -51,43 +61,60 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
               )}
 
               {burgerOpen && (
-                <div className="absolute left-0 top-full mt-2 w-64 rounded-xl border border-slate-300/80 dark:border-slate-700/80 bg-white dark:bg-slate-800 shadow-xl shadow-slate-200/40 dark:shadow-slate-700/40 overflow-hidden z-[60]">
+                <div className="absolute left-0 top-full mt-2 w-72 rounded-xl border border-slate-300/80 dark:border-slate-700/80 bg-white dark:bg-slate-800 shadow-xl shadow-slate-200/40 dark:shadow-slate-700/40 overflow-hidden z-[60]">
                   <div className="py-2">
                     <div className="px-4 pb-2 pt-1">
                       <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">Projets</p>
                     </div>
                     <button
-                      onClick={() => { onSelectDirectory(''); setBurgerOpen(false); }}
+                      onClick={() => { onSelectSession(''); setBurgerOpen(false); }}
                       className={`w-full text-left px-4 py-2 text-sm transition-colors ${
-                        !selectedDirectory
+                        !selectedSessionId
                           ? 'bg-indigo-50 dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 font-medium'
                           : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50'
                       }`}
                     >
-                      Tous les projets
+                      Tous les chats
                     </button>
-                    {sessions
-                      .filter(s => s.directory)
-                      .map((s) => {
-                        const isActive = selectedDirectory === s.directory;
-                        const title = s.titre || s.directory.split('/').pop() || s.directory;
-                        return (
+                    {Object.entries(byDirectory).map(([dir, chats]) => {
+                      const projectName = dir.split('/').pop() || dir;
+                      return (
+                        <div key={dir}>
+                          <div className="my-1 border-t border-slate-200 dark:border-slate-700/50" />
+                          <div className="flex items-center gap-2 px-4 py-1.5">
+                            <Folder className="h-3.5 w-3.5 shrink-0 text-slate-400 dark:text-slate-500" />
+                            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide truncate">{projectName}</span>
+                          </div>
+                          {chats.map((s) => {
+                            const isActive = selectedSessionId === s._id;
+                            return (
+                              <button
+                                key={s._id}
+                                onClick={() => { onSelectSession(s._id); setBurgerOpen(false); }}
+                                className={`w-full text-left pl-9 pr-4 py-2 text-sm transition-colors flex items-center gap-2 ${
+                                  isActive
+                                    ? 'bg-indigo-50 dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 font-medium'
+                                    : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50'
+                                }`}
+                              >
+                                <MessageSquare className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                                <span className="truncate">{s.titre}</span>
+                              </button>
+                            );
+                          })}
                           <button
-                            key={s._id}
-                            onClick={() => { onSelectDirectory(s.directory); setBurgerOpen(false); }}
-                            className={`w-full text-left px-4 py-2 text-sm transition-colors ${
-                              isActive
-                                ? 'bg-indigo-50 dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 font-medium'
-                                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50'
-                            }`}
+                            onClick={() => { onNewChat(dir); setBurgerOpen(false); }}
+                            className="w-full flex items-center gap-2 pl-9 pr-4 py-1.5 text-xs font-medium text-indigo-500 dark:text-indigo-400 transition-colors hover:bg-indigo-50 dark:hover:bg-slate-700/50"
                           >
-                            <span className="truncate">{title}</span>
+                            <Plus className="h-3.5 w-3.5 shrink-0" />
+                            Nouveau chat
                           </button>
-                        );
-                      })}
+                        </div>
+                      );
+                    })}
                     <div className="my-1 border-t border-slate-200 dark:border-slate-700/50" />
                     <button
-                      onClick={() => { onNewSession(); setBurgerOpen(false); }}
+                      onClick={() => { onNewProject(); setBurgerOpen(false); }}
                       className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-indigo-600 dark:text-indigo-400 transition-colors hover:bg-indigo-50 dark:hover:bg-slate-700/50"
                     >
                       <Plus className="h-4 w-4 shrink-0" />
@@ -136,7 +163,7 @@ export const AppHeader: React.FC<AppHeaderProps> = ({
               Chat
             </button>
           </div>
-          {!selectedDirectory && (
+          {!selectedSessionId && (
             <button
               onClick={() => onNewTask()}
               className="group flex items-center gap-1.5 rounded-lg bg-gradient-to-r from-violet-500 to-indigo-600 px-3 py-1.5 text-sm font-medium text-white shadow-md shadow-indigo-200/50 dark:shadow-indigo-700/50 transition-all hover:shadow-lg hover:shadow-indigo-300/50 dark:hover:shadow-indigo-500/50"
