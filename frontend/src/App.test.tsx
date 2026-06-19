@@ -43,25 +43,26 @@ describe('App', () => {
     render(<App />);
     expect(screen.getByRole('button', { name: 'Tableau' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Cartes' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Chat/i })).toBeInTheDocument();
+    // Use exact name 'Chat' to avoid matching the burger button "Tous les chats"
+    expect(screen.getByRole('button', { name: 'Chat' })).toBeInTheDocument();
   });
 
   it('switches to chat view when Chat button is clicked', () => {
     render(<App />);
-    fireEvent.click(screen.getByRole('button', { name: /Chat/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Chat' }));
     expect(screen.getByTestId('chat-view')).toBeInTheDocument();
   });
 
   it('switches back to table view after clicking Tableau', () => {
     render(<App />);
-    fireEvent.click(screen.getByRole('button', { name: /Chat/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Chat' }));
     fireEvent.click(screen.getByRole('button', { name: 'Tableau' }));
     expect(screen.queryByTestId('chat-view')).not.toBeInTheDocument();
   });
 
   it('persists chat viewMode to localStorage', () => {
     render(<App />);
-    fireEvent.click(screen.getByRole('button', { name: /Chat/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Chat' }));
     expect(localStorage.getItem('cockpitai_viewmode')).toBe('chat');
   });
 
@@ -85,7 +86,7 @@ describe('App — AppHeader wiring', () => {
     expect(screen.getByRole('button', { name: 'Cartes' })).toBeInTheDocument();
   });
 
-  it('shows "Nouvelle tâche" button from AppHeader when no directory is selected', () => {
+  it('shows "Nouvelle tâche" button from AppHeader when no session is selected', () => {
     render(<App />);
     expect(screen.getByRole('button', { name: /Nouvelle tâche/i })).toBeInTheDocument();
   });
@@ -93,44 +94,46 @@ describe('App — AppHeader wiring', () => {
   it('lists available sessions in the AppHeader burger menu', () => {
     mockUseSessions.mockReturnValue(withSession('/projects/foo', 'Foo Project'));
     render(<App />);
-    // Open the burger menu (title is "Tous les projets" by default)
-    fireEvent.click(screen.getByText('Tous les projets'));
+    // Open the burger (default title is "Tous les chats")
+    fireEvent.click(screen.getByRole('button', { name: 'Tous les chats' }));
     expect(screen.getByText('Foo Project')).toBeInTheDocument();
   });
 });
 
 describe('App — QuickInputBar wiring', () => {
-  it('does not render QuickInputBar when no directory is selected', () => {
+  it('does not render QuickInputBar when no session is selected', () => {
     render(<App />);
     expect(screen.queryByPlaceholderText('Décrivez la tâche…')).not.toBeInTheDocument();
   });
 
-  it('renders QuickInputBar after selecting a session directory', () => {
+  it('renders QuickInputBar after selecting a session', () => {
     mockUseSessions.mockReturnValue(withSession('/projects/foo', 'Foo Project'));
     render(<App />);
-    // Open burger and select the session
-    fireEvent.click(screen.getByText('Tous les projets'));
+    // Open burger and select the session chat
+    fireEvent.click(screen.getByRole('button', { name: 'Tous les chats' }));
     fireEvent.click(screen.getByText('Foo Project'));
     expect(screen.getByPlaceholderText('Décrivez la tâche…')).toBeInTheDocument();
   });
 
-  it('hides QuickInputBar after navigating back to "Tous les projets"', () => {
+  it('hides QuickInputBar after navigating back to "Tous les chats"', () => {
     mockUseSessions.mockReturnValue(withSession('/projects/foo', 'Foo Project'));
     render(<App />);
     // Select a session
-    fireEvent.click(screen.getByText('Tous les projets'));
+    fireEvent.click(screen.getByRole('button', { name: 'Tous les chats' }));
     fireEvent.click(screen.getByText('Foo Project'));
     expect(screen.getByPlaceholderText('Décrivez la tâche…')).toBeInTheDocument();
-    // Deselect by choosing "Tous les projets" from the burger
-    fireEvent.click(screen.getByText('Foo Project')); // burger trigger now shows session title
-    fireEvent.click(screen.getByText('Tous les projets'));
+    // Open burger (title is now "Foo Project")
+    fireEvent.click(screen.getByRole('button', { name: 'Foo Project' }));
+    // Click "Tous les chats" in dropdown (burger now shows "Foo Project", not "Tous les chats",
+    // so this uniquely selects the dropdown deselect option)
+    fireEvent.click(screen.getByRole('button', { name: 'Tous les chats' }));
     expect(screen.queryByPlaceholderText('Décrivez la tâche…')).not.toBeInTheDocument();
   });
 
   it('QuickInputBar send button is disabled when prompt is empty', () => {
     mockUseSessions.mockReturnValue(withSession('/projects/foo', 'Foo Project'));
     render(<App />);
-    fireEvent.click(screen.getByText('Tous les projets'));
+    fireEvent.click(screen.getByRole('button', { name: 'Tous les chats' }));
     fireEvent.click(screen.getByText('Foo Project'));
     expect(screen.getByRole('button', { name: 'Envoyer' })).toBeDisabled();
   });

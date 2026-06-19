@@ -132,18 +132,39 @@ function AppContent() {
     });
   };
   useReactEffect(() => {
-    if (prevSelectedDirectory.current !== selectedDirectory && selectedDirectory) {
-      prevSelectedDirectory.current = selectedDirectory;
+    if (prevSelectedSessionId.current !== selectedSessionId && selectedSessionId) {
+      prevSelectedSessionId.current = selectedSessionId;
       scrollToBottom();
     } else {
-      prevSelectedDirectory.current = selectedDirectory;
+      prevSelectedSessionId.current = selectedSessionId;
     }
-  }, [selectedDirectory, normalizedTasks.length]);
+  }, [selectedSessionId, normalizedTasks.length]);
 
   const handleDelete = (id: string) => { deleteTask.mutate(id); };
   const handleSkip = (id: string) => skipTask.mutate(id);
   const handleResume = (id: string) => resumeTask.mutate(id);
   const handleViewTask = (task: Task) => setSelectedTask(task);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (!isMobile || !selectedSessionId) return;
+    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    const dy = e.changedTouches[0].clientY - touchStartY.current;
+    if (Math.abs(dx) < 60 || Math.abs(dy) >= Math.abs(dx)) return;
+    const projectChats = [...sessions]
+      .filter((s: Session) => s.directory === selectedDirectory)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    const idx = projectChats.findIndex((s: Session) => s._id === selectedSessionId);
+    if (idx === -1 || projectChats.length < 2) return;
+    const next = dx < 0
+      ? projectChats[(idx + 1) % projectChats.length]
+      : projectChats[(idx - 1 + projectChats.length) % projectChats.length];
+    setSelectedSessionId(next._id);
+  };
 
   const handleQuickSend = () => {
     if (!selectedSessionId || !quickPrompt.trim()) return;
@@ -183,23 +204,30 @@ function AppContent() {
     );
   }
 
-  const currentSession = sessions.find((s: Session) => s.directory === selectedDirectory);
-  const currentTitle = currentSession?.titre || selectedDirectory?.split('/').pop() || selectedDirectory || 'Tous les projets';
+  const currentSession = sessions.find((s: Session) => s._id === selectedSessionId);
+  const currentTitle = currentSession?.titre || 'Tous les chats';
 
   return (
     <div className={`relative flex flex-col h-[100dvh] overflow-hidden ${isDark ? 'dark bg-slate-900' : 'bg-gradient-to-br from-slate-100 via-white to-indigo-100'}`}>
       <AppHeader
         currentTitle={currentTitle}
         sessions={sessions}
+        selectedSessionId={selectedSessionId}
         selectedDirectory={selectedDirectory}
-        onSelectDirectory={setSelectedDirectory}
+        onSelectSession={setSelectedSessionId}
+        onNewProject={() => { setNewChatDirectory(''); setShowNewSession(true); }}
+        onNewChat={(dir) => { setNewChatDirectory(dir); setShowNewSession(true); }}
         viewMode={viewMode}
         onViewChange={setViewMode}
-        onNewSession={() => setShowNewSession(true)}
         onNewTask={() => setShowNewTask(true)}
       />
 
-      <main ref={tasksContainerRef} className="flex-1 min-h-0 overflow-y-auto w-full">
+      <main
+        ref={tasksContainerRef}
+        className="flex-1 min-h-0 overflow-y-auto w-full"
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+      >
         <div className="sticky top-0 z-30 px-4 pt-3 pb-2">
           <div className="mx-auto max-w-7xl">
             <FilterBar selectedFilter={selectedFilter} onFilterChange={setSelectedFilter} />
@@ -232,7 +260,7 @@ function AppContent() {
                   <Plus className="h-4 w-4" />
                   Créer un projet
                 </button>
-              ) : !selectedDirectory && (
+              ) : !selectedSessionId && (
                 <button
                   onClick={() => setShowNewTask(true)}
                   className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-violet-500 to-indigo-600 px-5 py-2.5 text-sm font-medium text-white shadow-lg shadow-indigo-200 dark:shadow-indigo-700 transition hover:shadow-xl hover:shadow-indigo-300 dark:hover:shadow-indigo-700"
@@ -268,7 +296,7 @@ function AppContent() {
         </div>
       </main>
 
-      {selectedDirectory && (
+      {selectedSessionId && (
         <QuickInputBar
           agent={quickAgent}
           onAgentChange={setQuickAgent}
@@ -282,11 +310,13 @@ function AppContent() {
 
       {showNewSession && (
         <NewSessionModal
+          defaultDirectory={newChatDirectory}
           onClose={() => setShowNewSession(false)}
           onSubmit={(data) => {
             createSession.mutate(data, {
-              onSuccess: () => {
-                setSelectedDirectory(data.directory);
+              onSuccess: (result: any) => {
+                const newId = result?.session?._id;
+                if (newId) setSelectedSessionId(newId);
                 queryClient.invalidateQueries({ queryKey: KEYS.sessions });
               },
             });

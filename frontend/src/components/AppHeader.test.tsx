@@ -16,13 +16,15 @@ const makeSessions = (overrides: Partial<Session>[] = []): Session[] =>
   }));
 
 const defaultProps = {
-  currentTitle: 'Tous les projets',
+  currentTitle: 'Tous les chats',
   sessions: [] as Session[],
+  selectedSessionId: '',
   selectedDirectory: '',
-  onSelectDirectory: vi.fn(),
+  onSelectSession: vi.fn(),
+  onNewProject: vi.fn(),
+  onNewChat: vi.fn(),
   viewMode: 'cards' as const,
   onViewChange: vi.fn(),
-  onNewSession: vi.fn(),
   onNewTask: vi.fn(),
 };
 
@@ -47,32 +49,30 @@ describe('AppHeader', () => {
     expect(screen.getByText('AI')).toBeInTheDocument();
   });
 
-  it('calls onNewSession when "Nouveau projet" is clicked in the burger menu', () => {
-    render(<AppHeader {...defaultProps} />);
-    // Open burger menu
-    fireEvent.click(screen.getByText('Tous les projets'));
+  it('calls onNewProject when "Nouveau projet" is clicked in the burger menu', () => {
+    render(<AppHeader {...defaultProps} currentTitle="Mon Projet" />);
+    fireEvent.click(screen.getByText('Mon Projet'));
     fireEvent.click(screen.getByText('Nouveau projet'));
-    expect(defaultProps.onNewSession).toHaveBeenCalledTimes(1);
+    expect(defaultProps.onNewProject).toHaveBeenCalledTimes(1);
   });
 
   it('closes burger menu after clicking "Nouveau projet"', () => {
-    render(<AppHeader {...defaultProps} />);
-    fireEvent.click(screen.getByText('Tous les projets'));
+    render(<AppHeader {...defaultProps} currentTitle="Mon Projet" />);
+    fireEvent.click(screen.getByText('Mon Projet'));
     expect(screen.getByText('Nouveau projet')).toBeInTheDocument();
     fireEvent.click(screen.getByText('Nouveau projet'));
     expect(screen.queryByText('Nouveau projet')).not.toBeInTheDocument();
   });
 
   it('calls onNewTask when "Nouvelle tâche" button is clicked', () => {
-    render(<AppHeader {...defaultProps} selectedDirectory="" />);
-    // "Nouvelle tâche" button is only shown when no directory is selected
+    render(<AppHeader {...defaultProps} selectedSessionId="" />);
     const newTaskBtn = screen.getByRole('button', { name: /Nouvelle tâche/i });
     fireEvent.click(newTaskBtn);
     expect(defaultProps.onNewTask).toHaveBeenCalledTimes(1);
   });
 
-  it('hides "Nouvelle tâche" button when a directory is selected', () => {
-    render(<AppHeader {...defaultProps} selectedDirectory="/projects/foo" />);
+  it('hides "Nouvelle tâche" button when a session is selected', () => {
+    render(<AppHeader {...defaultProps} selectedSessionId="s1" />);
     expect(screen.queryByRole('button', { name: /Nouvelle tâche/i })).not.toBeInTheDocument();
   });
 
@@ -90,40 +90,40 @@ describe('AppHeader', () => {
 
   it('calls onViewChange("chat") when Chat button is clicked', () => {
     render(<AppHeader {...defaultProps} />);
-    fireEvent.click(screen.getByRole('button', { name: /Chat/i }));
+    // Use exact name 'Chat' to avoid matching "Tous les chats" in the burger button
+    fireEvent.click(screen.getByRole('button', { name: 'Chat' }));
     expect(defaultProps.onViewChange).toHaveBeenCalledWith('chat');
   });
 
-  it('lists sessions in the burger menu when opened', () => {
+  it('lists sessions grouped by project in the burger menu when opened', () => {
     const sessions = makeSessions([
       { titre: 'Alpha', directory: '/projects/alpha' },
       { titre: 'Beta', directory: '/projects/beta' },
     ]);
     render(<AppHeader {...defaultProps} sessions={sessions} />);
-    fireEvent.click(screen.getByText('Tous les projets'));
+    fireEvent.click(screen.getByText('Tous les chats'));
     expect(screen.getByText('Alpha')).toBeInTheDocument();
     expect(screen.getByText('Beta')).toBeInTheDocument();
   });
 
-  it('calls onSelectDirectory with the session directory when a session is clicked', () => {
-    const sessions = makeSessions([{ titre: 'Alpha', directory: '/projects/alpha' }]);
+  it('calls onSelectSession with the session _id when a chat is clicked', () => {
+    const sessions = makeSessions([{ _id: 's42', titre: 'Alpha', directory: '/projects/alpha' }]);
     render(<AppHeader {...defaultProps} sessions={sessions} />);
-    fireEvent.click(screen.getByText('Tous les projets'));
+    fireEvent.click(screen.getByText('Tous les chats'));
     fireEvent.click(screen.getByText('Alpha'));
-    expect(defaultProps.onSelectDirectory).toHaveBeenCalledWith('/projects/alpha');
+    expect(defaultProps.onSelectSession).toHaveBeenCalledWith('s42');
   });
 
-  it('calls onSelectDirectory("") when "Tous les projets" is clicked in the menu', () => {
-    // Use a distinct currentTitle to avoid collision with the menu item text
-    render(<AppHeader {...defaultProps} currentTitle="Mon Projet" selectedDirectory="/projects/foo" />);
+  it('calls onSelectSession("") when "Tous les chats" is clicked in the menu', () => {
+    render(<AppHeader {...defaultProps} currentTitle="Mon Projet" selectedSessionId="s1" />);
     fireEvent.click(screen.getByText('Mon Projet'));
-    fireEvent.click(screen.getByText('Tous les projets'));
-    expect(defaultProps.onSelectDirectory).toHaveBeenCalledWith('');
+    // burger shows "Mon Projet", so only the dropdown option is named "Tous les chats"
+    fireEvent.click(screen.getByRole('button', { name: 'Tous les chats' }));
+    expect(defaultProps.onSelectSession).toHaveBeenCalledWith('');
   });
 
   it('shows the selectedDirectory badge when a directory is set', () => {
     render(<AppHeader {...defaultProps} selectedDirectory="/projects/foo" />);
-    // Two badges exist (sm:hidden and hidden sm:inline-block), both render in jsdom
     const badges = screen.getAllByText('/projects/foo');
     expect(badges.length).toBeGreaterThan(0);
   });
@@ -135,12 +135,9 @@ describe('AppHeader', () => {
 
   it('toggles the burger menu open and closed', () => {
     render(<AppHeader {...defaultProps} currentTitle="Mon Projet" />);
-    // Initially closed
     expect(screen.queryByText('Nouveau projet')).not.toBeInTheDocument();
-    // Open via burger trigger
     fireEvent.click(screen.getByText('Mon Projet'));
     expect(screen.getByText('Nouveau projet')).toBeInTheDocument();
-    // Close by clicking trigger again
     fireEvent.click(screen.getByText('Mon Projet'));
     expect(screen.queryByText('Nouveau projet')).not.toBeInTheDocument();
   });
