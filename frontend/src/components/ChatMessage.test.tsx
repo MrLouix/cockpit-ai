@@ -80,19 +80,21 @@ describe('ChatMessage', () => {
     expect(defaultProps.onSkip).toHaveBeenCalledWith('task-1');
   });
 
-  it('calls onDelete with task._id after confirm dialog', () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
+  it('calls onDelete with task._id after inline confirm (clicking Oui)', () => {
     const task = makeTask();
     render(<ChatMessage task={task} {...defaultProps} />);
+    // First click shows the inline "Oui / Non" confirmation
     fireEvent.click(screen.getByRole('button', { name: /Supprimer/i }));
+    // Second click on "Oui" triggers the actual deletion
+    fireEvent.click(screen.getByRole('button', { name: /Confirmer la suppression/i }));
     expect(defaultProps.onDelete).toHaveBeenCalledWith('task-1');
   });
 
-  it('does not call onDelete when confirm is cancelled', () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
+  it('does not call onDelete when inline confirm is cancelled (clicking Non)', () => {
     const task = makeTask();
     render(<ChatMessage task={task} {...defaultProps} />);
     fireEvent.click(screen.getByRole('button', { name: /Supprimer/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Annuler/i }));
     expect(defaultProps.onDelete).not.toHaveBeenCalled();
   });
 
