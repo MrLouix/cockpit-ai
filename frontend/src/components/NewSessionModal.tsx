@@ -4,16 +4,62 @@ import { FolderOpen, Info, X } from 'lucide-react';
 
 interface NewSessionModalProps {
   defaultDirectory?: string;
+  fullscreen?: boolean;
   onClose: () => void;
   onSubmit: (data: { directory: string; titre: string }) => void;
 }
 
-export const NewSessionModal: React.FC<NewSessionModalProps> = ({ defaultDirectory, onClose, onSubmit }) => {
+export const NewSessionModal: React.FC<NewSessionModalProps> = ({ defaultDirectory, fullscreen, onClose, onSubmit }) => {
   const [titre, setTitre] = useState('');
   const [directory, setDirectory] = useState(defaultDirectory ?? '');
   const [showPicker, setShowPicker] = useState(false);
   const isNewProject = !defaultDirectory;
   const valid = titre.trim() && (isNewProject ? directory.trim() : true);
+
+  if (fullscreen) {
+    return (
+      <div className="fixed inset-0 z-[100] flex flex-col bg-white dark:bg-slate-800 overflow-y-auto">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-700">
+          <button
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-slate-500 dark:text-slate-400 transition hover:bg-slate-100 dark:hover:bg-slate-700/50 hover:text-slate-700 dark:hover:text-slate-300"
+            aria-label="Fermer"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          <h2 className="text-base font-bold text-slate-800 dark:text-slate-200">Nouveau Chat</h2>
+          <button
+            type="button"
+            onClick={() => valid && onSubmit({ titre: titre.trim(), directory: directory.trim() })}
+            disabled={!valid}
+            className="rounded-lg bg-gradient-to-r from-violet-500 to-indigo-600 px-4 py-1.5 text-sm font-medium text-white shadow-sm transition disabled:opacity-40"
+          >
+            Créer
+          </button>
+        </div>
+        <div className="flex-1 px-4 py-5 space-y-4">
+          <div className="flex gap-2 rounded-lg bg-indigo-100/80 dark:bg-slate-700/40 px-3 py-2">
+            <Info className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600 dark:text-indigo-400" />
+            <p className="text-sm text-indigo-700 dark:text-indigo-300">
+              Nouveau chat dans le projet <code className="font-mono text-xs bg-indigo-200/60 dark:bg-slate-600 px-1 rounded">{(defaultDirectory ?? '').split('/').pop()}</code>
+            </p>
+          </div>
+          <div>
+            <label htmlFor="titre-fs" className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Nom du chat</label>
+            <input
+              id="titre-fs"
+              type="text"
+              value={titre}
+              onChange={(e) => setTitre(e.target.value)}
+              placeholder="e.g. Refonte API v2"
+              className="w-full rounded-lg border border-slate-300/80 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2.5 text-sm text-slate-700 dark:text-slate-300 shadow-sm transition focus:border-indigo-300 dark:focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-700/50"
+              autoFocus
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

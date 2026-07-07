@@ -89,15 +89,33 @@ export const mainLoop = async () => {
   try {
     const tasks = await Task.find({
       status: { $in: ['pending', 'running'] },
-    }).populate('sessionId');
+    }).populate('sessionId').sort({ createdAt: 1 });
 
     console.log(`Found ${tasks.length} tasks to process`);
 
+    // Sessions with a running task — block new pending tasks from starting
+    const busySessions = new Set(
+      tasks
+        .filter(t => t.status === 'running')
+        .map(t => t.sessionId._id.toString())
+    );
+
     for (const task of tasks) {
-      if (task.status === 'pending') {
+      const sessionId = task.sessionId._id.toString();
+
+      if (task.status === 'running') {
+        await processSubtasks(task);
+      } else if (task.status === 'pending') {
+        if (busySessions.has(sessionId)) continue;
+
         await processTask(task);
+        await processSubtasks(task);
+
+        const freshTask = await Task.findById(task._id);
+        if (freshTask?.status === 'running') {
+          busySessions.add(sessionId);
+        }
       }
-      await processSubtasks(task);
     }
   } catch (err) {
     console.error('Error in main loop:', err);
@@ -141,8 +159,15 @@ export const startEngine = async () => {
     console.log(`Engine health endpoint running on port ${ENGINE_PORT}`);
   });
 
+  const scheduleNextLoop = () => {
+    setTimeout(async () => {
+      await mainLoop();
+      scheduleNextLoop();
+    }, POLL_INTERVAL);
+  };
+
   await mainLoop();
-  setInterval(mainLoop, POLL_INTERVAL);
+  scheduleNextLoop();
 };
 
 if (process.argv[1] && process.argv[1].endsWith('aiEngine.js')) {

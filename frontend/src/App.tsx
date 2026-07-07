@@ -21,6 +21,7 @@ import { NewSessionModal } from './components/NewSessionModal';
 import { NewTaskModal } from './components/NewTaskModal';
 import { AppHeader } from './components/AppHeader';
 import { QuickInputBar } from './components/QuickInputBar';
+import { AgentSelector } from './components/AgentSelector';
 import { FolderOpen, Plus } from 'lucide-react';
 import type { AgentType } from './types';
 
@@ -53,6 +54,8 @@ function AppContent() {
   useReactEffect(() => { localStorage.setItem('cockpitai_viewmode', viewMode); }, [viewMode]);
   const [selectedSessionId, setSelectedSessionId] = useState('');
   const [newChatDirectory, setNewChatDirectory] = useState('');
+  const [showInlineNewChat, setShowInlineNewChat] = useState(false);
+  const [inlineChatTitle, setInlineChatTitle] = useState('');
   const [selectedFilter, setSelectedFilter] = useState<FilterMode>('');
   const [showNewSession, setShowNewSession] = useState(false);
   const [showNewTask, setShowNewTask] = useState(false);
@@ -145,25 +148,52 @@ function AppContent() {
   const handleResume = (id: string) => resumeTask.mutate(id);
   const handleViewTask = (task: Task) => setSelectedTask(task);
 
+  const handleInlineChatCreate = () => {
+    if (!inlineChatTitle.trim()) return;
+    createSession.mutate({ titre: inlineChatTitle.trim(), directory: newChatDirectory }, {
+      onSuccess: (result: any) => {
+        const newId = result?.session?._id;
+        if (newId) setSelectedSessionId(newId);
+        queryClient.invalidateQueries({ queryKey: KEYS.sessions });
+        setShowInlineNewChat(false);
+        setInlineChatTitle('');
+      },
+    });
+  };
+
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
     touchStartY.current = e.touches[0].clientY;
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
-    if (!isMobile || !selectedSessionId) return;
+    if (!isMobile) return;
     const dx = e.changedTouches[0].clientX - touchStartX.current;
     const dy = e.changedTouches[0].clientY - touchStartY.current;
     if (Math.abs(dx) < 60 || Math.abs(dy) >= Math.abs(dx)) return;
+    if (showInlineNewChat) {
+      if (dx > 0) { setShowInlineNewChat(false); setInlineChatTitle(''); }
+      return;
+    }
+    if (!selectedSessionId) return;
     const projectChats = [...sessions]
       .filter((s: Session) => s.directory === selectedDirectory)
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
     const idx = projectChats.findIndex((s: Session) => s._id === selectedSessionId);
-    if (idx === -1 || projectChats.length < 2) return;
-    const next = dx < 0
-      ? projectChats[(idx + 1) % projectChats.length]
-      : projectChats[(idx - 1 + projectChats.length) % projectChats.length];
-    setSelectedSessionId(next._id);
+    if (idx === -1) return;
+    if (dx > 0) {
+      // Swipe droite → chat précédent ; aucun effet si déjà le premier
+      if (idx > 0) setSelectedSessionId(projectChats[idx - 1]._id);
+    } else {
+      // Swipe gauche → chat suivant ; si dernier → formulaire inline de création
+      if (idx < projectChats.length - 1) {
+        setSelectedSessionId(projectChats[idx + 1]._id);
+      } else {
+        setNewChatDirectory(selectedDirectory);
+        setInlineChatTitle('');
+        setShowInlineNewChat(true);
+      }
+    }
   };
 
   const handleQuickSend = () => {
@@ -214,7 +244,7 @@ function AppContent() {
         sessions={sessions}
         selectedSessionId={selectedSessionId}
         selectedDirectory={selectedDirectory}
-        onSelectSession={setSelectedSessionId}
+        onSelectSession={(id) => { setSelectedSessionId(id); setShowInlineNewChat(false); }}
         onNewProject={() => { setNewChatDirectory(''); setShowNewSession(true); }}
         onNewChat={(dir) => { setNewChatDirectory(dir); setShowNewSession(true); }}
         viewMode={viewMode}
@@ -228,75 +258,123 @@ function AppContent() {
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
       >
-        <div className="sticky top-0 z-30 px-4 pt-3 pb-2">
-          <div className="mx-auto max-w-7xl">
-            <FilterBar selectedFilter={selectedFilter} onFilterChange={setSelectedFilter} />
-          </div>
-        </div>
-
-        <div className="mx-auto max-w-7xl px-4 pb-32">
-          {effectiveView === 'chat' ? (
-            <ChatView
-              tasks={normalizedTasks}
-              onSkip={handleSkip}
-              onResume={handleResume}
-              onDelete={handleDelete}
-              onClick={handleViewTask}
-            />
-          ) : normalizedTasks.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20">
-              <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-100 to-violet-100 dark:from-slate-700 dark:to-slate-600 text-indigo-500 dark:text-indigo-400 shadow-inner">
-                <FolderOpen className="h-10 w-10" />
+        {showInlineNewChat ? (
+          <div className="flex flex-col items-start px-6 pt-10 pb-16">
+            <div className="w-full max-w-sm space-y-6">
+              <div className="text-center">
+                <h2 className="text-xl font-bold text-slate-800 dark:text-slate-200">Nouveau Chat</h2>
+                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                  Dans le projet <span className="font-medium text-indigo-600 dark:text-indigo-400">{newChatDirectory.split('/').pop()}</span>
+                </p>
               </div>
-              <h3 className="mb-1 text-lg font-semibold text-slate-800 dark:text-slate-200">Aucune tâche</h3>
-              <p className="mb-5 text-sm text-slate-500 dark:text-slate-400">
-                {sessions.length === 0 ? 'Créez un premier projet pour lancer vos agents.' : 'Ajoutez une tâche ou ajustez vos filtres.'}
-              </p>
-              {sessions.length === 0 ? (
-                <button
-                  onClick={() => setShowNewSession(true)}
-                  className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-violet-500 to-indigo-600 px-5 py-2.5 text-sm font-medium text-white shadow-lg shadow-indigo-200 dark:shadow-indigo-700 transition hover:shadow-xl hover:shadow-indigo-300 dark:hover:shadow-indigo-700"
-                >
-                  <Plus className="h-4 w-4" />
-                  Créer un projet
-                </button>
-              ) : !selectedSessionId && (
-                <button
-                  onClick={() => setShowNewTask(true)}
-                  className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-violet-500 to-indigo-600 px-5 py-2.5 text-sm font-medium text-white shadow-lg shadow-indigo-200 dark:shadow-indigo-700 transition hover:shadow-xl hover:shadow-indigo-300 dark:hover:shadow-indigo-700"
-                >
-                  <Plus className="h-4 w-4" />
-                  Créer une tâche
-                </button>
-              )}
+              <div className="space-y-4">
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">Agent</label>
+                  <AgentSelector value={quickAgent} onChange={setQuickAgent} variant="buttons" />
+                </div>
+                <input
+                  type="text"
+                  value={inlineChatTitle}
+                  onChange={(e) => setInlineChatTitle(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleInlineChatCreate();
+                    if (e.key === 'Escape') { setShowInlineNewChat(false); setInlineChatTitle(''); }
+                  }}
+                  placeholder="Nom du chat"
+                  autoFocus
+                  className="w-full rounded-xl border border-slate-300/80 dark:border-slate-600 bg-white dark:bg-slate-700 px-4 py-3 text-sm text-slate-700 dark:text-slate-300 shadow-sm transition focus:border-indigo-300 dark:focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-700/50"
+                />
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => { setShowInlineNewChat(false); setInlineChatTitle(''); }}
+                    className="flex-1 rounded-xl py-2.5 text-sm font-medium text-slate-600 dark:text-slate-400 border border-slate-300/80 dark:border-slate-600 transition hover:bg-slate-100 dark:hover:bg-slate-700/50 hover:text-slate-800 dark:hover:text-slate-300"
+                  >
+                    Annuler
+                  </button>
+                  <button
+                    onClick={handleInlineChatCreate}
+                    disabled={!inlineChatTitle.trim() || createSession.isPending}
+                    className="flex-1 rounded-xl bg-gradient-to-r from-violet-500 to-indigo-600 py-2.5 text-sm font-medium text-white shadow-md shadow-indigo-200/50 dark:shadow-indigo-700/50 transition hover:shadow-lg disabled:opacity-40"
+                  >
+                    Créer le chat
+                  </button>
+                </div>
+              </div>
             </div>
-          ) : effectiveView === 'table' ? (
-            <TaskTable
-              tasks={normalizedTasks}
-              sessionTitles={sessionTitles}
-              onDelete={handleDelete}
-              onSkip={handleSkip}
-              onResume={handleResume}
-              onView={handleViewTask}
-            />
-          ) : (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {normalizedTasks.map((t: Task & { sessionIdStr: string }) => (
-                <TaskCard
-                  key={t._id}
-                  task={t}
+          </div>
+        ) : (
+          <>
+            <div className="sticky top-0 z-30 px-4 pt-3 pb-2">
+              <div className="mx-auto max-w-7xl">
+                <FilterBar selectedFilter={selectedFilter} onFilterChange={setSelectedFilter} />
+              </div>
+            </div>
+
+            <div className="mx-auto max-w-7xl px-4 pb-32">
+              {effectiveView === 'chat' ? (
+                <ChatView
+                  tasks={normalizedTasks}
+                  onSkip={handleSkip}
+                  onResume={handleResume}
+                  onDelete={handleDelete}
+                  onClick={handleViewTask}
+                />
+              ) : normalizedTasks.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-20">
+                  <div className="mb-5 flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-100 to-violet-100 dark:from-slate-700 dark:to-slate-600 text-indigo-500 dark:text-indigo-400 shadow-inner">
+                    <FolderOpen className="h-10 w-10" />
+                  </div>
+                  <h3 className="mb-1 text-lg font-semibold text-slate-800 dark:text-slate-200">Aucune tâche</h3>
+                  <p className="mb-5 text-sm text-slate-500 dark:text-slate-400">
+                    {sessions.length === 0 ? 'Créez un premier projet pour lancer vos agents.' : 'Ajoutez une tâche ou ajustez vos filtres.'}
+                  </p>
+                  {sessions.length === 0 ? (
+                    <button
+                      onClick={() => setShowNewSession(true)}
+                      className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-violet-500 to-indigo-600 px-5 py-2.5 text-sm font-medium text-white shadow-lg shadow-indigo-200 dark:shadow-indigo-700 transition hover:shadow-xl hover:shadow-indigo-300 dark:hover:shadow-indigo-700"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Créer un projet
+                    </button>
+                  ) : !selectedSessionId && (
+                    <button
+                      onClick={() => setShowNewTask(true)}
+                      className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-violet-500 to-indigo-600 px-5 py-2.5 text-sm font-medium text-white shadow-lg shadow-indigo-200 dark:shadow-indigo-700 transition hover:shadow-xl hover:shadow-indigo-300 dark:hover:shadow-indigo-700"
+                    >
+                      <Plus className="h-4 w-4" />
+                      Créer une tâche
+                    </button>
+                  )}
+                </div>
+              ) : effectiveView === 'table' ? (
+                <TaskTable
+                  tasks={normalizedTasks}
+                  sessionTitles={sessionTitles}
                   onDelete={handleDelete}
                   onSkip={handleSkip}
                   onResume={handleResume}
                   onView={handleViewTask}
                 />
-              ))}
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {normalizedTasks.map((t: Task & { sessionIdStr: string }) => (
+                    <TaskCard
+                      key={t._id}
+                      task={t}
+                      onDelete={handleDelete}
+                      onSkip={handleSkip}
+                      onResume={handleResume}
+                      onView={handleViewTask}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
-          )}
-        </div>
+          </>
+        )}
       </main>
 
-      {selectedSessionId && (
+      {selectedSessionId && !showInlineNewChat && (
         <QuickInputBar
           agent={quickAgent}
           onAgentChange={setQuickAgent}

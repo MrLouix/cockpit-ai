@@ -27,7 +27,7 @@ export const NewTaskModal: React.FC<NewTaskModalProps> = ({ sessions, onClose, o
         <div className="mb-5 flex items-center justify-between">
           <div>
             <h2 className="text-lg font-bold text-slate-800 dark:text-slate-200">Nouvelle Tâche</h2>
-            <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">Choisissez un projet, un agent et décrivez le prompt</p>
+            <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">Choisissez un chat, un agent et décrivez le prompt</p>
           </div>
           <button
             onClick={onClose}
@@ -39,18 +39,27 @@ export const NewTaskModal: React.FC<NewTaskModalProps> = ({ sessions, onClose, o
         </div>
 
         <div className="space-y-4">
-          {/* Project */}
+          {/* Chat */}
           <div>
-            <label htmlFor="task-session" className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Projet</label>
+            <label htmlFor="task-session" className="mb-1 block text-sm font-medium text-slate-700 dark:text-slate-300">Chat</label>
             <select
               id="task-session"
               value={sessionId}
               onChange={(e) => setSessionId(e.target.value)}
               className="w-full rounded-lg border border-slate-300/80 dark:border-slate-600 bg-white dark:bg-slate-700 px-3 py-2.5 text-sm text-slate-700 dark:text-slate-300 shadow-sm transition focus:border-indigo-300 dark:focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 dark:focus:ring-indigo-700/50 cursor-pointer"
             >
-              <option value="">— Choisir un projet —</option>
-              {sessions.map((s) => (
-                <option key={s._id} value={s._id}>{s.titre || s.directory}</option>
+              <option value="">— Choisir un chat —</option>
+              {Object.entries(
+                sessions.filter(s => s.directory).reduce((acc, s) => {
+                  (acc[s.directory] ??= []).push(s);
+                  return acc;
+                }, {} as Record<string, typeof sessions>)
+              ).map(([dir, chats]) => (
+                <optgroup key={dir} label={dir.split('/').pop() || dir}>
+                  {chats.map((s) => (
+                    <option key={s._id} value={s._id}>{s.titre}</option>
+                  ))}
+                </optgroup>
               ))}
             </select>
           </div>
