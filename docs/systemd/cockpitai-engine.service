@@ -13,6 +13,7 @@ Environment=REDIS_URL=redis://localhost:6379
 Environment=ENGINE_PORT=3332
 Environment=WORKER_CONCURRENCY=5
 Environment=NODE_ENV=production
+Environment=NODE_PATH=/home/ai_agent/projects/cockpitAI/backend/node_modules:/home/ai_agent/projects/cockpitAI/engine/node_modules
 StandardOutput=append:/home/ai_agent/projects/cockpitAI/logs/engine.log
 StandardError=append:/home/ai_agent/projects/cockpitAI/logs/engine-error.log
 

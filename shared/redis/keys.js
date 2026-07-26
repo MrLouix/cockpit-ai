@@ -29,4 +29,4 @@ export const KEYS = {
 export const TASK_STATUSES = ['pending', 'running', 'success', 'pause', 'failed', 'skipped'];
 
 // BullMQ queue name
-export const QUEUE_NAME = 'cockpitai:tasks';
+export const QUEUE_NAME = 'cockpitai-tasks';

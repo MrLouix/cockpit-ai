@@ -1,3 +1,10 @@
 {
-  "type": "module"
+  "name": "cockpitai-shared",
+  "version": "1.0.0",
+  "description": "Shared modules for CockpitAI - Redis stores and BullMQ queue",
+  "type": "module",
+  "dependencies": {
+    "bullmq": "^5.0.0",
+    "ioredis": "^5.4.0"
+  }
 }
