@@ -6,11 +6,12 @@ Documentation=https://github.com/MrLouix/cockpitAI
 [Service]
 Type=simple
 WorkingDirectory=/home/ai_agent/projects/cockpitAI/frontend
-ExecStart=/usr/bin/npx vite --port 3333 --host 0.0.0.0
+ExecStart=/usr/bin/npx vite --port 3333
 Restart=on-failure
 RestartSec=5
-Environment=NODE_ENV=production
+Environment=HOST=0.0.0.0
 Environment=PORT=3333
+Environment=NODE_ENV=production
 StandardOutput=append:/home/ai_agent/projects/cockpitAI/logs/frontend.log
 StandardError=append:/home/ai_agent/projects/cockpitAI/logs/frontend-error.log
 

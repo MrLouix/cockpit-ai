@@ -11,6 +11,7 @@ import { connectRedis } from './config/redis.js';
 
 const app = express();
 const PORT = process.env.PORT || 3331;
+const HOST = process.env.HOST || 'localhost';
 
 app.use(cors());
 app.use(express.json());
@@ -40,8 +41,8 @@ export default app;
 const isMain = process.argv[1] === fileURLToPath(import.meta.url);
 if (isMain) {
   connectRedis().then(() => {
-    app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
+    app.listen(PORT, HOST, () => {
+      console.log(`Server running on http://${HOST}:${PORT}`);
     });
   });
 }
