@@ -9,12 +9,18 @@ async function request<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...options,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      headers: { 'Content-Type': 'application/json' },
+      ...options,
+    });
+  } catch (err: any) {
+    // Network error — server down, CORS, etc.
+    throw { message: `Network error: ${err?.message || 'fetch failed'}`, status: 0 };
+  }
 
-  const data = await res.json().catch(() => null);
+  const data: any = await res.json().catch(() => null);
 
   if (!res.ok) {
     const error: ApiError = {
@@ -65,7 +71,7 @@ export function getTasks(params?: {
   if (params?.status) qs.set('status', params.status);
   if (params?.agent) qs.set('agent', params.agent);
   if (params?.limit) qs.set('limit', String(params.limit));
-  return request<any[]>(
+  return request<{ tasks: any[]; total: number }>(
     '/tasks' + (qs.toString() ? '?' + qs.toString() : '')
   );
 }

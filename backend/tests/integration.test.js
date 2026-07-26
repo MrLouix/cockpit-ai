@@ -1,39 +1,42 @@
-import mongoose from 'mongoose';
-import { MongoMemoryServer } from 'mongodb-memory-server';
 import { jest } from '@jest/globals';
+import RedisMock from 'ioredis-mock';
 
-jest.unstable_mockModule('../config/db.js', () => ({
-  connectDB: jest.fn().mockResolvedValue(undefined),
+const redisMock = new RedisMock();
+
+jest.unstable_mockModule('../../shared/redis/client.js', () => ({
+  getRedis: () => redisMock,
+  closeRedis: jest.fn(),
+  resetRedis: jest.fn(),
 }));
 
+jest.unstable_mockModule('../../shared/queue/taskQueue.js', () => ({
+  enqueueTask: jest.fn().mockResolvedValue(undefined),
+  enqueueSubtask: jest.fn().mockResolvedValue(undefined),
+  removeJob: jest.fn().mockResolvedValue(undefined),
+  getTaskQueue: jest.fn().mockReturnValue({ getJobCounts: jest.fn().mockResolvedValue({}) }),
+  closeTaskQueue: jest.fn(),
+  resetTaskQueue: jest.fn(),
+}));
+
+jest.unstable_mockModule('../config/redis.js', () => ({
+  connectRedis: jest.fn().mockResolvedValue(undefined),
+}));
+
+// Dynamic imports AFTER mocks
 const { default: request } = await import('supertest');
 const { default: app } = await import('../server.js');
-const { Task } = await import('../models/Task.js');
-const { Session } = await import('../models/Session.js');
-
-let mongod;
-
-beforeAll(async () => {
-  mongod = await MongoMemoryServer.create();
-  await mongoose.connect(mongod.getUri());
-});
-
-afterAll(async () => {
-  await mongoose.disconnect();
-  await mongod.stop();
-});
+const sessionStore = await import('../../shared/redis/sessionStore.js');
+const taskStore = await import('../../shared/redis/taskStore.js');
 
 afterEach(async () => {
-  for (const col of Object.values(mongoose.connection.collections)) {
-    await col.deleteMany({});
-  }
+  await redisMock.flushall();
 });
 
 // ---------------------------------------------------------------------------
 // Full task lifecycle
 // ---------------------------------------------------------------------------
 
-describe('Task lifecycle: create → skip → resume → subtask → skip subtask → cascade delete', () => {
+describe('Task lifecycle: create -> skip -> resume -> subtask -> skip subtask -> cascade delete', () => {
   it('completes the full lifecycle correctly', async () => {
     // 1. Create session
     const sessionRes = await request(app)
@@ -102,18 +105,18 @@ describe('Task lifecycle: create → skip → resume → subtask → skip subtas
     expect(resumeSubRes.status).toBe(200);
     expect(resumeSubRes.body.task.subtasks[0].status).toBe('pending');
 
-    // 8. Delete session — must cascade-delete the task
+    // 8. Delete session -- must cascade-delete the task
     const deleteRes = await request(app).delete(`/api/sessions/${sessionId}`);
     expect(deleteRes.status).toBe(200);
     expect(deleteRes.body.message).toBe('Session and associated tasks deleted');
 
-    // Verify the task was actually removed
-    const orphanTask = await Task.findById(taskId);
-    expect(orphanTask).toBeNull();
+    // Verify the task was actually removed (GET returns 404)
+    const orphanTaskRes = await request(app).get(`/api/tasks/${taskId}`);
+    expect(orphanTaskRes.status).toBe(404);
 
-    // Verify the session was removed
-    const orphanSession = await Session.findById(sessionId);
-    expect(orphanSession).toBeNull();
+    // Verify the session was removed (GET returns 404)
+    const orphanSessionRes = await request(app).get(`/api/sessions/${sessionId}`);
+    expect(orphanSessionRes.status).toBe(404);
   });
 });
 
@@ -123,10 +126,10 @@ describe('Task lifecycle: create → skip → resume → subtask → skip subtas
 
 describe('Task filtering', () => {
   it('filters tasks by directory across sessions', async () => {
-    const s1 = await Session.create({ directory: '/proj/alpha', titre: 'Alpha' });
-    const s2 = await Session.create({ directory: '/proj/beta', titre: 'Beta' });
-    await Task.create({ sessionId: s1._id, prompt: 'Alpha task' });
-    await Task.create({ sessionId: s2._id, prompt: 'Beta task' });
+    const s1 = await sessionStore.createSession({ directory: '/proj/alpha', titre: 'Alpha' });
+    const s2 = await sessionStore.createSession({ directory: '/proj/beta', titre: 'Beta' });
+    await taskStore.createTask({ sessionId: s1._id, prompt: 'Alpha task' });
+    await taskStore.createTask({ sessionId: s2._id, prompt: 'Beta task' });
 
     const res = await request(app).get('/api/tasks?directory=/proj/alpha');
     expect(res.status).toBe(200);
@@ -136,9 +139,10 @@ describe('Task filtering', () => {
   });
 
   it('filters tasks by status', async () => {
-    const s = await Session.create({ directory: '/proj', titre: 'P' });
-    await Task.create({ sessionId: s._id, prompt: 'Pending', status: 'pending' });
-    await Task.create({ sessionId: s._id, prompt: 'Failed', status: 'failed' });
+    const s = await sessionStore.createSession({ directory: '/proj', titre: 'P' });
+    await taskStore.createTask({ sessionId: s._id, prompt: 'Pending' });
+    const failedTask = await taskStore.createTask({ sessionId: s._id, prompt: 'Failed' });
+    await taskStore.updateTask(failedTask._id, { status: 'failed' });
 
     const res = await request(app).get('/api/tasks?status=failed');
     expect(res.status).toBe(200);
@@ -147,10 +151,10 @@ describe('Task filtering', () => {
   });
 
   it('respects limit while total reflects full count', async () => {
-    const s = await Session.create({ directory: '/proj', titre: 'P' });
-    await Task.create({ sessionId: s._id, prompt: 'T1' });
-    await Task.create({ sessionId: s._id, prompt: 'T2' });
-    await Task.create({ sessionId: s._id, prompt: 'T3' });
+    const s = await sessionStore.createSession({ directory: '/proj', titre: 'P' });
+    await taskStore.createTask({ sessionId: s._id, prompt: 'T1' });
+    await taskStore.createTask({ sessionId: s._id, prompt: 'T2' });
+    await taskStore.createTask({ sessionId: s._id, prompt: 'T3' });
 
     const res = await request(app).get('/api/tasks?limit=2');
     expect(res.body.tasks).toHaveLength(2);
@@ -163,20 +167,20 @@ describe('Task filtering', () => {
 // ---------------------------------------------------------------------------
 
 describe('Error propagation', () => {
-  it('returns 400 for an invalid ObjectId on task GET', async () => {
+  it('returns 400 for an invalid ID format on task GET', async () => {
     const res = await request(app).get('/api/tasks/not-an-id');
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('Invalid ID format');
   });
 
-  it('returns 400 for an invalid ObjectId on session GET', async () => {
+  it('returns 400 for an invalid ID format on session GET', async () => {
     const res = await request(app).get('/api/sessions/not-an-id');
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('Invalid ID format');
   });
 
-  it('returns 404 for a valid ObjectId that does not exist', async () => {
-    const fakeId = new mongoose.Types.ObjectId();
+  it('returns 404 for a valid UUID that does not exist', async () => {
+    const fakeId = '00000000-0000-0000-0000-000000000000';
     const res = await request(app).get(`/api/tasks/${fakeId}`);
     expect(res.status).toBe(404);
     expect(res.body.error).toBe('Task not found');

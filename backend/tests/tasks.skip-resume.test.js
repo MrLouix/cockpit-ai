@@ -1,37 +1,41 @@
-import mongoose from 'mongoose';
-import { MongoMemoryServer } from 'mongodb-memory-server';
 import { jest } from '@jest/globals';
+import RedisMock from 'ioredis-mock';
 
-jest.unstable_mockModule('../config/db.js', () => ({
-  connectDB: jest.fn().mockResolvedValue(undefined),
+const redisMock = new RedisMock();
+
+jest.unstable_mockModule('../../shared/redis/client.js', () => ({
+  getRedis: () => redisMock,
+  closeRedis: jest.fn(),
+  resetRedis: jest.fn(),
 }));
 
+jest.unstable_mockModule('../../shared/queue/taskQueue.js', () => ({
+  enqueueTask: jest.fn().mockResolvedValue(undefined),
+  enqueueSubtask: jest.fn().mockResolvedValue(undefined),
+  removeJob: jest.fn().mockResolvedValue(undefined),
+  getTaskQueue: jest.fn().mockReturnValue({ getJobCounts: jest.fn().mockResolvedValue({}) }),
+  closeTaskQueue: jest.fn(),
+  resetTaskQueue: jest.fn(),
+}));
+
+jest.unstable_mockModule('../config/redis.js', () => ({
+  connectRedis: jest.fn().mockResolvedValue(undefined),
+}));
+
+// Dynamic imports AFTER mocks
 const { default: request } = await import('supertest');
 const { default: app } = await import('../server.js');
-const { Session } = await import('../models/Session.js');
-const { Task } = await import('../models/Task.js');
+const sessionStore = await import('../../shared/redis/sessionStore.js');
+const taskStore = await import('../../shared/redis/taskStore.js');
 
-let mongod;
 let session;
 
-beforeAll(async () => {
-  mongod = await MongoMemoryServer.create();
-  await mongoose.connect(mongod.getUri());
-});
-
-afterAll(async () => {
-  await mongoose.disconnect();
-  await mongod.stop();
-});
-
 beforeEach(async () => {
-  session = await Session.create({ directory: '/proj', titre: 'Proj' });
+  session = await sessionStore.createSession({ directory: '/proj', titre: 'Proj' });
 });
 
 afterEach(async () => {
-  for (const col of Object.values(mongoose.connection.collections)) {
-    await col.deleteMany({});
-  }
+  await redisMock.flushall();
 });
 
 // ---------------------------------------------------------------------------
@@ -40,21 +44,23 @@ afterEach(async () => {
 
 describe('PATCH /api/tasks/:id/skip', () => {
   it('returns 200 and sets task status to skipped', async () => {
-    const task = await Task.create({ sessionId: session._id, prompt: 'Skip me' });
+    const task = await taskStore.createTask({ sessionId: session._id, prompt: 'Skip me' });
     const res = await request(app).patch(`/api/tasks/${task._id}/skip`);
     expect(res.status).toBe(200);
     expect(res.body.task.status).toBe('skipped');
   });
 
   it('returns 400 when task is already skipped', async () => {
-    const task = await Task.create({ sessionId: session._id, prompt: 'Already skipped', status: 'skipped' });
+    const task = await taskStore.createTask({ sessionId: session._id, prompt: 'Already skipped' });
+    await taskStore.updateTask(task._id, { status: 'skipped' });
     const res = await request(app).patch(`/api/tasks/${task._id}/skip`);
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('Task is already skipped');
   });
 
   it('returns 404 for a non-existent task', async () => {
-    const res = await request(app).patch(`/api/tasks/${new mongoose.Types.ObjectId()}/skip`);
+    const fakeId = '00000000-0000-0000-0000-000000000000';
+    const res = await request(app).patch(`/api/tasks/${fakeId}/skip`);
     expect(res.status).toBe(404);
     expect(res.body.error).toBe('Task not found');
   });
@@ -66,42 +72,47 @@ describe('PATCH /api/tasks/:id/skip', () => {
 
 describe('PATCH /api/tasks/:id/resume', () => {
   it('returns 200 and sets status to pending when task is skipped', async () => {
-    const task = await Task.create({ sessionId: session._id, prompt: 'Resume me', status: 'skipped' });
+    const task = await taskStore.createTask({ sessionId: session._id, prompt: 'Resume me' });
+    await taskStore.updateTask(task._id, { status: 'skipped' });
     const res = await request(app).patch(`/api/tasks/${task._id}/resume`);
     expect(res.status).toBe(200);
     expect(res.body.task.status).toBe('pending');
   });
 
   it('returns 200 and sets status to pending when task is paused', async () => {
-    const task = await Task.create({ sessionId: session._id, prompt: 'Paused', status: 'pause' });
+    const task = await taskStore.createTask({ sessionId: session._id, prompt: 'Paused' });
+    await taskStore.updateTask(task._id, { status: 'pause' });
     const res = await request(app).patch(`/api/tasks/${task._id}/resume`);
     expect(res.status).toBe(200);
     expect(res.body.task.status).toBe('pending');
   });
 
   it('returns 400 when task is pending (not resumable)', async () => {
-    const task = await Task.create({ sessionId: session._id, prompt: 'Pending task', status: 'pending' });
+    const task = await taskStore.createTask({ sessionId: session._id, prompt: 'Pending task' });
     const res = await request(app).patch(`/api/tasks/${task._id}/resume`);
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('Task cannot be resumed from its current status');
   });
 
   it('returns 400 when task is running (not resumable)', async () => {
-    const task = await Task.create({ sessionId: session._id, prompt: 'Running', status: 'running' });
+    const task = await taskStore.createTask({ sessionId: session._id, prompt: 'Running' });
+    await taskStore.updateTask(task._id, { status: 'running' });
     const res = await request(app).patch(`/api/tasks/${task._id}/resume`);
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('Task cannot be resumed from its current status');
   });
 
   it('returns 400 when task is success (not resumable)', async () => {
-    const task = await Task.create({ sessionId: session._id, prompt: 'Done', status: 'success' });
+    const task = await taskStore.createTask({ sessionId: session._id, prompt: 'Done' });
+    await taskStore.updateTask(task._id, { status: 'success' });
     const res = await request(app).patch(`/api/tasks/${task._id}/resume`);
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('Task cannot be resumed from its current status');
   });
 
   it('returns 404 for a non-existent task', async () => {
-    const res = await request(app).patch(`/api/tasks/${new mongoose.Types.ObjectId()}/resume`);
+    const fakeId = '00000000-0000-0000-0000-000000000000';
+    const res = await request(app).patch(`/api/tasks/${fakeId}/resume`);
     expect(res.status).toBe(404);
     expect(res.body.error).toBe('Task not found');
   });
@@ -113,7 +124,7 @@ describe('PATCH /api/tasks/:id/resume', () => {
 
 describe('POST /api/tasks/:id/subtasks', () => {
   it('creates a subtask and returns 201 with the updated task', async () => {
-    const task = await Task.create({ sessionId: session._id, prompt: 'Parent' });
+    const task = await taskStore.createTask({ sessionId: session._id, prompt: 'Parent' });
     const res = await request(app)
       .post(`/api/tasks/${task._id}/subtasks`)
       .send({ prompt: 'Child task' });
@@ -125,7 +136,7 @@ describe('POST /api/tasks/:id/subtasks', () => {
   });
 
   it('creates a subtask with a custom agent', async () => {
-    const task = await Task.create({ sessionId: session._id, prompt: 'Parent' });
+    const task = await taskStore.createTask({ sessionId: session._id, prompt: 'Parent' });
     const res = await request(app)
       .post(`/api/tasks/${task._id}/subtasks`)
       .send({ prompt: 'Use vibe', agent: 'vibe' });
@@ -134,7 +145,7 @@ describe('POST /api/tasks/:id/subtasks', () => {
   });
 
   it('returns 400 when prompt is missing', async () => {
-    const task = await Task.create({ sessionId: session._id, prompt: 'Parent' });
+    const task = await taskStore.createTask({ sessionId: session._id, prompt: 'Parent' });
     const res = await request(app)
       .post(`/api/tasks/${task._id}/subtasks`)
       .send({});
@@ -143,8 +154,9 @@ describe('POST /api/tasks/:id/subtasks', () => {
   });
 
   it('returns 404 for a non-existent task', async () => {
+    const fakeId = '00000000-0000-0000-0000-000000000000';
     const res = await request(app)
-      .post(`/api/tasks/${new mongoose.Types.ObjectId()}/subtasks`)
+      .post(`/api/tasks/${fakeId}/subtasks`)
       .send({ prompt: 'Ghost' });
     expect(res.status).toBe(404);
     expect(res.body.error).toBe('Task not found');
@@ -157,41 +169,34 @@ describe('POST /api/tasks/:id/subtasks', () => {
 
 describe('PATCH /api/tasks/:id/subtasks/:subtaskId/skip', () => {
   it('skips a subtask and returns 200 with updated task', async () => {
-    const task = await Task.create({
-      sessionId: session._id,
-      prompt: 'Parent',
-      subtasks: [{ prompt: 'Child' }],
-    });
-    const subtaskId = task.subtasks[0]._id;
-    const res = await request(app).patch(`/api/tasks/${task._id}/subtasks/${subtaskId}/skip`);
+    const task = await taskStore.createTask({ sessionId: session._id, prompt: 'Parent' });
+    const subtask = await taskStore.addSubtask(task._id, { prompt: 'Child' });
+    const res = await request(app).patch(`/api/tasks/${task._id}/subtasks/${subtask._id}/skip`);
     expect(res.status).toBe(200);
     expect(res.body.task.subtasks[0].status).toBe('skipped');
   });
 
   it('returns 400 when subtask is already skipped', async () => {
-    const task = await Task.create({
-      sessionId: session._id,
-      prompt: 'Parent',
-      subtasks: [{ prompt: 'Child', status: 'skipped' }],
-    });
-    const subtaskId = task.subtasks[0]._id;
-    const res = await request(app).patch(`/api/tasks/${task._id}/subtasks/${subtaskId}/skip`);
+    const task = await taskStore.createTask({ sessionId: session._id, prompt: 'Parent' });
+    const subtask = await taskStore.addSubtask(task._id, { prompt: 'Child' });
+    await taskStore.updateSubtask(task._id, subtask._id, { status: 'skipped' });
+    const res = await request(app).patch(`/api/tasks/${task._id}/subtasks/${subtask._id}/skip`);
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('Subtask is already skipped');
   });
 
   it('returns 404 for a non-existent subtask ID', async () => {
-    const task = await Task.create({ sessionId: session._id, prompt: 'Parent' });
-    const fakeSubtaskId = new mongoose.Types.ObjectId();
+    const task = await taskStore.createTask({ sessionId: session._id, prompt: 'Parent' });
+    const fakeSubtaskId = '00000000-0000-0000-0000-000000000000';
     const res = await request(app).patch(`/api/tasks/${task._id}/subtasks/${fakeSubtaskId}/skip`);
     expect(res.status).toBe(404);
     expect(res.body.error).toBe('Subtask not found');
   });
 
   it('returns 404 when the parent task does not exist', async () => {
-    const res = await request(app).patch(
-      `/api/tasks/${new mongoose.Types.ObjectId()}/subtasks/${new mongoose.Types.ObjectId()}/skip`
-    );
+    const fakeTaskId = '00000000-0000-0000-0000-000000000000';
+    const fakeSubtaskId = '11111111-1111-1111-1111-111111111111';
+    const res = await request(app).patch(`/api/tasks/${fakeTaskId}/subtasks/${fakeSubtaskId}/skip`);
     expect(res.status).toBe(404);
     expect(res.body.error).toBe('Task not found');
   });
@@ -203,56 +208,43 @@ describe('PATCH /api/tasks/:id/subtasks/:subtaskId/skip', () => {
 
 describe('PATCH /api/tasks/:id/subtasks/:subtaskId/resume', () => {
   it('resumes a skipped subtask and sets status to pending', async () => {
-    const task = await Task.create({
-      sessionId: session._id,
-      prompt: 'Parent',
-      subtasks: [{ prompt: 'Child', status: 'skipped' }],
-    });
-    const subtaskId = task.subtasks[0]._id;
-    const res = await request(app).patch(`/api/tasks/${task._id}/subtasks/${subtaskId}/resume`);
+    const task = await taskStore.createTask({ sessionId: session._id, prompt: 'Parent' });
+    const subtask = await taskStore.addSubtask(task._id, { prompt: 'Child' });
+    await taskStore.updateSubtask(task._id, subtask._id, { status: 'skipped' });
+    const res = await request(app).patch(`/api/tasks/${task._id}/subtasks/${subtask._id}/resume`);
     expect(res.status).toBe(200);
     expect(res.body.task.subtasks[0].status).toBe('pending');
   });
 
   it('resumes a paused subtask and sets status to pending', async () => {
-    const task = await Task.create({
-      sessionId: session._id,
-      prompt: 'Parent',
-      subtasks: [{ prompt: 'Child', status: 'pause' }],
-    });
-    const subtaskId = task.subtasks[0]._id;
-    const res = await request(app).patch(`/api/tasks/${task._id}/subtasks/${subtaskId}/resume`);
+    const task = await taskStore.createTask({ sessionId: session._id, prompt: 'Parent' });
+    const subtask = await taskStore.addSubtask(task._id, { prompt: 'Child' });
+    await taskStore.updateSubtask(task._id, subtask._id, { status: 'pause' });
+    const res = await request(app).patch(`/api/tasks/${task._id}/subtasks/${subtask._id}/resume`);
     expect(res.status).toBe(200);
     expect(res.body.task.subtasks[0].status).toBe('pending');
   });
 
   it('returns 400 when subtask is pending (not resumable)', async () => {
-    const task = await Task.create({
-      sessionId: session._id,
-      prompt: 'Parent',
-      subtasks: [{ prompt: 'Child', status: 'pending' }],
-    });
-    const subtaskId = task.subtasks[0]._id;
-    const res = await request(app).patch(`/api/tasks/${task._id}/subtasks/${subtaskId}/resume`);
+    const task = await taskStore.createTask({ sessionId: session._id, prompt: 'Parent' });
+    const subtask = await taskStore.addSubtask(task._id, { prompt: 'Child' });
+    const res = await request(app).patch(`/api/tasks/${task._id}/subtasks/${subtask._id}/resume`);
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('Subtask cannot be resumed from its current status');
   });
 
   it('returns 400 when subtask is success (not resumable)', async () => {
-    const task = await Task.create({
-      sessionId: session._id,
-      prompt: 'Parent',
-      subtasks: [{ prompt: 'Child', status: 'success' }],
-    });
-    const subtaskId = task.subtasks[0]._id;
-    const res = await request(app).patch(`/api/tasks/${task._id}/subtasks/${subtaskId}/resume`);
+    const task = await taskStore.createTask({ sessionId: session._id, prompt: 'Parent' });
+    const subtask = await taskStore.addSubtask(task._id, { prompt: 'Child' });
+    await taskStore.updateSubtask(task._id, subtask._id, { status: 'success' });
+    const res = await request(app).patch(`/api/tasks/${task._id}/subtasks/${subtask._id}/resume`);
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('Subtask cannot be resumed from its current status');
   });
 
   it('returns 404 for a non-existent subtask ID', async () => {
-    const task = await Task.create({ sessionId: session._id, prompt: 'Parent' });
-    const fakeSubtaskId = new mongoose.Types.ObjectId();
+    const task = await taskStore.createTask({ sessionId: session._id, prompt: 'Parent' });
+    const fakeSubtaskId = '00000000-0000-0000-0000-000000000000';
     const res = await request(app).patch(`/api/tasks/${task._id}/subtasks/${fakeSubtaskId}/resume`);
     expect(res.status).toBe(404);
     expect(res.body.error).toBe('Subtask not found');

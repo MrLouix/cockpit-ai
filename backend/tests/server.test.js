@@ -1,15 +1,39 @@
 import { jest } from '@jest/globals';
+import RedisMock from 'ioredis-mock';
 
-// Mock connectDB before server.js is imported so it never touches MongoDB
-jest.unstable_mockModule('../config/db.js', () => ({
-  connectDB: jest.fn().mockResolvedValue(undefined),
+const redisMock = new RedisMock();
+
+jest.unstable_mockModule('../../shared/redis/client.js', () => ({
+  getRedis: () => redisMock,
+  closeRedis: jest.fn(),
+  resetRedis: jest.fn(),
 }));
 
-// Dynamic import after the mock is registered
-const { default: app } = await import('../server.js');
+jest.unstable_mockModule('../../shared/queue/taskQueue.js', () => ({
+  enqueueTask: jest.fn().mockResolvedValue(undefined),
+  enqueueSubtask: jest.fn().mockResolvedValue(undefined),
+  removeJob: jest.fn().mockResolvedValue(undefined),
+  getTaskQueue: jest.fn().mockReturnValue({ getJobCounts: jest.fn().mockResolvedValue({}) }),
+  closeTaskQueue: jest.fn(),
+  resetTaskQueue: jest.fn(),
+}));
 
-// supertest must also be dynamically imported in ESM context
+jest.unstable_mockModule('../config/redis.js', () => ({
+  connectRedis: jest.fn().mockResolvedValue(undefined),
+}));
+
+// Dynamic imports AFTER mocks
 const { default: request } = await import('supertest');
+const { default: app } = await import('../server.js');
+const { errorHandler } = await import('../middleware/errorHandler.js');
+
+afterEach(async () => {
+  await redisMock.flushall();
+});
+
+// ---------------------------------------------------------------------------
+// Health check
+// ---------------------------------------------------------------------------
 
 describe('GET /health', () => {
   it('returns 200 with status ok', async () => {
@@ -25,6 +49,10 @@ describe('GET /health', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Unknown routes
+// ---------------------------------------------------------------------------
+
 describe('Unknown routes', () => {
   it('returns 404 for an unknown GET route', async () => {
     const res = await request(app).get('/this-route-does-not-exist');
@@ -35,5 +63,46 @@ describe('Unknown routes', () => {
   it('returns 404 for an unknown POST route', async () => {
     const res = await request(app).post('/api/nonexistent');
     expect(res.status).toBe(404);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// errorHandler unit tests (called directly, no HTTP)
+// ---------------------------------------------------------------------------
+
+describe('errorHandler middleware', () => {
+  let res;
+
+  beforeEach(() => {
+    res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn(),
+    };
+  });
+
+  it('responds with err.status when provided', () => {
+    const err = Object.assign(new Error('Forbidden'), { status: 403 });
+    errorHandler(err, {}, res, () => {});
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Forbidden' });
+  });
+
+  it('defaults to status 500 when err.status is absent', () => {
+    const err = new Error('Something blew up');
+    errorHandler(err, {}, res, () => {});
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Something blew up' });
+  });
+
+  it('uses "Internal server error" when err.message is absent', () => {
+    errorHandler({}, {}, res, () => {});
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Internal server error' });
+  });
+
+  it('returns JSON with an error key', () => {
+    errorHandler(new Error('oops'), {}, res, () => {});
+    const [payload] = res.json.mock.calls[0];
+    expect(payload).toHaveProperty('error');
   });
 });

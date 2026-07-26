@@ -4,10 +4,10 @@
  * AI Query Manager - Engine Entry Point
  * 
  * Starts the AI Engine which:
- * - Connects to MongoDB
- * - Polls for pending tasks
+ * - Connects to Redis
+ * - Runs a BullMQ Worker on the cockpitai:tasks queue
  * - Dispatches tasks to configured AI agents
- * - Saves results back to MongoDB
+ * - Saves results back to Redis
  */
 
 import { startEngine } from './aiEngine.js';

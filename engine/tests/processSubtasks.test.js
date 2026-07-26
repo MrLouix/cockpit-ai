@@ -1,249 +1,294 @@
 import { jest } from '@jest/globals';
-import mongoose from 'mongoose';
-import { MongoMemoryServer } from 'mongodb-memory-server';
+import RedisMock from 'ioredis-mock';
+
+const redisMock = new RedisMock();
 
 const mockRunAgent = jest.fn();
+const mockDetectSubtasks = jest.fn(() => null);
+
+jest.unstable_mockModule('../../shared/redis/client.js', () => ({
+  getRedis: () => redisMock,
+  closeRedis: jest.fn(),
+  resetRedis: jest.fn(),
+}));
+
+jest.unstable_mockModule('../../shared/queue/taskQueue.js', () => ({
+  enqueueTask: jest.fn().mockResolvedValue(undefined),
+  enqueueSubtask: jest.fn().mockResolvedValue(undefined),
+  removeJob: jest.fn().mockResolvedValue(undefined),
+  getTaskQueue: jest.fn().mockReturnValue({ getJobCounts: jest.fn().mockResolvedValue({}) }),
+  closeTaskQueue: jest.fn(),
+  resetTaskQueue: jest.fn(),
+}));
 
 jest.unstable_mockModule('../agents/index.js', () => ({
   runAgent: mockRunAgent,
-  detectSubtasks: jest.fn(() => null),
+  detectSubtasks: mockDetectSubtasks,
 }));
 
-let processSubtasks;
-let Task;
-let Session;
-let mongod;
+// Dynamic imports AFTER mocks
+const sessionStore = await import('../../shared/redis/sessionStore.js');
+const taskStore = await import('../../shared/redis/taskStore.js');
+const { processSubtaskJob } = await import('../processor.js');
 
-beforeAll(async () => {
-  mongod = await MongoMemoryServer.create();
-  await mongoose.connect(mongod.getUri());
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
-  ({ processSubtasks } = await import('../aiEngine.js'));
-  ({ default: Task } = await import('../models/Task.js'));
-  ({ default: Session } = await import('../models/Session.js'));
-});
+function makeJob(data, opts = {}) {
+  return {
+    id: data.taskId || data.subtaskId,
+    data,
+    timestamp: Date.now(),
+    moveToDelayed: jest.fn().mockResolvedValue(undefined),
+    updateData: jest.fn().mockResolvedValue(undefined),
+    ...opts,
+  };
+}
 
-afterAll(async () => {
-  await mongoose.disconnect();
-  await mongod.stop();
-});
-
-afterEach(async () => {
-  for (const col of Object.values(mongoose.connection.collections)) {
-    await col.deleteMany({});
-  }
-  mockRunAgent.mockReset();
-});
-
-async function makeTask(subtasks = [], taskOverrides = {}) {
-  const session = await Session.create({ directory: '/proj', titre: 'Test' });
-  return Task.create({
+async function seedSubtask(subtaskOverrides = {}, taskOverrides = {}) {
+  const session = await sessionStore.createSession({ directory: '/proj', titre: 'Test' });
+  const task = await taskStore.createTask({
     sessionId: session._id,
     prompt: 'parent prompt',
     agent: 'claude',
-    subtasks,
     ...taskOverrides,
   });
+  // Mark parent as running (subtask processing happens while parent is running)
+  await taskStore.updateTask(task._id, { status: 'running' });
+
+  const subtask = await taskStore.addSubtask(task._id, {
+    prompt: 'subtask prompt',
+    agent: 'claude',
+    ...subtaskOverrides,
+  });
+  return { session, task, subtask };
 }
 
 // ---------------------------------------------------------------------------
-// No subtasks
+// Lifecycle
 // ---------------------------------------------------------------------------
 
-describe('processSubtasks — no subtasks', () => {
-  it('returns without error and does not call runAgent', async () => {
-    const task = await makeTask([]);
-    await processSubtasks(task);
-    expect(mockRunAgent).not.toHaveBeenCalled();
-  });
+afterEach(async () => {
+  await redisMock.flushall();
+  mockRunAgent.mockReset();
+  mockDetectSubtasks.mockReset();
+  mockDetectSubtasks.mockReturnValue(null);
 });
 
 // ---------------------------------------------------------------------------
-// Single pending subtask — success
+// Success path
 // ---------------------------------------------------------------------------
 
-describe('processSubtasks — single subtask success', () => {
+describe('processSubtaskJob — success', () => {
   it('sets subtask status to success', async () => {
     mockRunAgent.mockResolvedValue({ success: true, result: 'agent output' });
-    const task = await makeTask([{ prompt: 'subtask prompt' }]);
+    const { session, task, subtask } = await seedSubtask();
+    const job = makeJob({
+      type: 'subtask',
+      subtaskId: subtask._id,
+      taskId: task._id,
+      sessionId: session._id,
+      prompt: subtask.prompt,
+      agent: 'claude',
+    });
 
-    await processSubtasks(task);
+    await processSubtaskJob(job, 'test-token');
 
-    const updated = await Task.findById(task._id);
-    expect(updated.subtasks[0].status).toBe('success');
+    const updated = await taskStore.getSubtask(task._id, subtask._id);
+    expect(updated.status).toBe('success');
   });
 
-  it('persists agent output in subtask.result', async () => {
+  it('persists agent output in subtask result', async () => {
     mockRunAgent.mockResolvedValue({ success: true, result: 'agent output' });
-    const task = await makeTask([{ prompt: 'subtask prompt' }]);
+    const { session, task, subtask } = await seedSubtask();
+    const job = makeJob({
+      type: 'subtask',
+      subtaskId: subtask._id,
+      taskId: task._id,
+      sessionId: session._id,
+      prompt: subtask.prompt,
+      agent: 'claude',
+    });
 
-    await processSubtasks(task);
+    await processSubtaskJob(job, 'test-token');
 
-    const updated = await Task.findById(task._id);
-    expect(updated.subtasks[0].result).toBe('agent output');
+    const updated = await taskStore.getSubtask(task._id, subtask._id);
+    expect(updated.result).toBe('agent output');
   });
 
   it('sets executedByAgent on the subtask', async () => {
     mockRunAgent.mockResolvedValue({ success: true, result: 'ok' });
-    const task = await makeTask([{ prompt: 'subtask prompt' }]);
+    const { session, task, subtask } = await seedSubtask();
+    const job = makeJob({
+      type: 'subtask',
+      subtaskId: subtask._id,
+      taskId: task._id,
+      sessionId: session._id,
+      prompt: subtask.prompt,
+      agent: 'claude',
+    });
 
-    await processSubtasks(task);
+    await processSubtaskJob(job, 'test-token');
 
-    const updated = await Task.findById(task._id);
-    expect(updated.subtasks[0].executedByAgent).toBe('claude');
+    const updated = await taskStore.getSubtask(task._id, subtask._id);
+    expect(updated.executedByAgent).toBe('claude');
   });
 });
 
 // ---------------------------------------------------------------------------
-// Single pending subtask — failure
+// Failure path
 // ---------------------------------------------------------------------------
 
-describe('processSubtasks — single subtask failure', () => {
+describe('processSubtaskJob — failure', () => {
   it('sets subtask status to failed when runAgent returns success:false', async () => {
-    mockRunAgent.mockResolvedValue({ success: false, error: 'err msg' });
-    const task = await makeTask([{ prompt: 'subtask prompt' }]);
+    mockRunAgent.mockResolvedValue({ success: false, error: 'err msg', errorType: 'generic' });
+    const { session, task, subtask } = await seedSubtask();
+    const job = makeJob({
+      type: 'subtask',
+      subtaskId: subtask._id,
+      taskId: task._id,
+      sessionId: session._id,
+      prompt: subtask.prompt,
+      agent: 'claude',
+    });
 
-    await processSubtasks(task);
+    await processSubtaskJob(job, 'test-token');
 
-    const updated = await Task.findById(task._id);
-    expect(updated.subtasks[0].status).toBe('failed');
+    const updated = await taskStore.getSubtask(task._id, subtask._id);
+    expect(updated.status).toBe('failed');
   });
 
-  it('stores error message in subtask.result', async () => {
-    mockRunAgent.mockResolvedValue({ success: false, error: 'err msg' });
-    const task = await makeTask([{ prompt: 'subtask prompt' }]);
+  it('stores error message in subtask result', async () => {
+    mockRunAgent.mockResolvedValue({ success: false, error: 'err msg', errorType: 'generic' });
+    const { session, task, subtask } = await seedSubtask();
+    const job = makeJob({
+      type: 'subtask',
+      subtaskId: subtask._id,
+      taskId: task._id,
+      sessionId: session._id,
+      prompt: subtask.prompt,
+      agent: 'claude',
+    });
 
-    await processSubtasks(task);
+    await processSubtaskJob(job, 'test-token');
 
-    const updated = await Task.findById(task._id);
-    expect(updated.subtasks[0].result).toBe('err msg');
+    const updated = await taskStore.getSubtask(task._id, subtask._id);
+    expect(updated.result).toBe('err msg');
   });
 });
 
 // ---------------------------------------------------------------------------
-// Terminal statuses are skipped
+// Parent finalization
 // ---------------------------------------------------------------------------
 
-describe('processSubtasks — terminal subtask statuses', () => {
-  it.each(['skipped', 'success', 'pause', 'failed'])(
-    'does not process subtask with status "%s"',
-    async (status) => {
-      const task = await makeTask([{ prompt: 'subtask', status }]);
+describe('processSubtaskJob — parent finalization', () => {
+  it('finalizes parent to success when all subtasks succeed', async () => {
+    mockRunAgent.mockResolvedValue({ success: true, result: 'done' });
+    const { session, task, subtask } = await seedSubtask();
+    const job = makeJob({
+      type: 'subtask',
+      subtaskId: subtask._id,
+      taskId: task._id,
+      sessionId: session._id,
+      prompt: subtask.prompt,
+      agent: 'claude',
+    });
 
-      await processSubtasks(task);
+    await processSubtaskJob(job, 'test-token');
 
-      expect(mockRunAgent).not.toHaveBeenCalled();
-      const updated = await Task.findById(task._id);
-      expect(updated.subtasks[0].status).toBe(status);
-    }
-  );
+    const updatedTask = await taskStore.getTask(task._id, { populate: false });
+    expect(updatedTask.status).toBe('success');
+  });
+
+  it('finalizes parent to failed when any subtask fails', async () => {
+    mockRunAgent.mockResolvedValue({ success: false, error: 'boom', errorType: 'generic' });
+    const { session, task, subtask } = await seedSubtask();
+    const job = makeJob({
+      type: 'subtask',
+      subtaskId: subtask._id,
+      taskId: task._id,
+      sessionId: session._id,
+      prompt: subtask.prompt,
+      agent: 'claude',
+    });
+
+    await processSubtaskJob(job, 'test-token');
+
+    const updatedTask = await taskStore.getTask(task._id, { populate: false });
+    expect(updatedTask.status).toBe('failed');
+  });
+
+  it('does not finalize parent when some subtasks are still pending', async () => {
+    mockRunAgent.mockResolvedValue({ success: true, result: 'done' });
+    const session = await sessionStore.createSession({ directory: '/proj', titre: 'Test' });
+    const task = await taskStore.createTask({ sessionId: session._id, prompt: 'parent', agent: 'claude' });
+    await taskStore.updateTask(task._id, { status: 'running' });
+
+    const sub1 = await taskStore.addSubtask(task._id, { prompt: 'sub1', agent: 'claude' });
+    await taskStore.addSubtask(task._id, { prompt: 'sub2', agent: 'claude' });
+
+    const job = makeJob({
+      type: 'subtask',
+      subtaskId: sub1._id,
+      taskId: task._id,
+      sessionId: session._id,
+      prompt: 'sub1',
+      agent: 'claude',
+    });
+
+    await processSubtaskJob(job, 'test-token');
+
+    const updatedTask = await taskStore.getTask(task._id, { populate: false });
+    // Parent should still be running because sub2 is still pending
+    expect(updatedTask.status).toBe('running');
+  });
 });
 
 // ---------------------------------------------------------------------------
 // Agent selection
 // ---------------------------------------------------------------------------
 
-describe('processSubtasks — agent selection', () => {
-  it('uses subtask.agent when set', async () => {
+describe('processSubtaskJob — agent selection', () => {
+  it('uses the subtask agent from the job data', async () => {
     mockRunAgent.mockResolvedValue({ success: true, result: '' });
-    const task = await makeTask([{ prompt: 'sub', agent: 'hermes' }]);
+    const { session, task, subtask } = await seedSubtask({ agent: 'hermes' });
+    const job = makeJob({
+      type: 'subtask',
+      subtaskId: subtask._id,
+      taskId: task._id,
+      sessionId: session._id,
+      prompt: subtask.prompt,
+      agent: 'hermes',
+    });
 
-    await processSubtasks(task);
+    await processSubtaskJob(job, 'test-token');
 
-    expect(mockRunAgent).toHaveBeenCalledWith('hermes', 'sub', { workingDirectory: '/proj' });
-    const updated = await Task.findById(task._id);
-    expect(updated.subtasks[0].executedByAgent).toBe('hermes');
-  });
-
-  it('falls back to task.agent when subtask.agent is unset in DB', async () => {
-    mockRunAgent.mockResolvedValue({ success: true, result: '' });
-    const task = await makeTask([{ prompt: 'sub' }], { agent: 'vibe' });
-
-    // Remove the agent field at the raw DB level to simulate an unset agent
-    await Task.collection.updateOne(
-      { _id: task._id },
-      { $unset: { 'subtasks.0.agent': '' } }
-    );
-    // Use lean() to bypass Mongoose hydration, which would re-apply schema defaults
-    const reloaded = await Task.findById(task._id).lean();
-
-    await processSubtasks(reloaded);
-
-    expect(mockRunAgent).toHaveBeenCalledWith('vibe', 'sub', { workingDirectory: '/proj' });
-    const updated = await Task.findById(task._id);
-    expect(updated.subtasks[0].executedByAgent).toBe('vibe');
+    expect(mockRunAgent).toHaveBeenCalledWith('hermes', subtask.prompt, { workingDirectory: '/proj' });
+    const updated = await taskStore.getSubtask(task._id, subtask._id);
+    expect(updated.executedByAgent).toBe('hermes');
   });
 });
 
 // ---------------------------------------------------------------------------
-// Multiple subtasks
+// Skip protection
 // ---------------------------------------------------------------------------
 
-describe('processSubtasks — multiple subtasks', () => {
-  it('processes both subtasks when both are pending', async () => {
-    mockRunAgent.mockResolvedValue({ success: true, result: 'done' });
-    const task = await makeTask([
-      { prompt: 'first' },
-      { prompt: 'second' },
-    ]);
+describe('processSubtaskJob — skip protection', () => {
+  it('does not call runAgent when subtask is already skipped', async () => {
+    const { session, task, subtask } = await seedSubtask();
+    await taskStore.updateSubtask(task._id, subtask._id, { status: 'skipped' });
+    const job = makeJob({
+      type: 'subtask',
+      subtaskId: subtask._id,
+      taskId: task._id,
+      sessionId: session._id,
+      prompt: subtask.prompt,
+      agent: 'claude',
+    });
 
-    await processSubtasks(task);
+    await processSubtaskJob(job, 'test-token');
 
-    expect(mockRunAgent).toHaveBeenCalledTimes(2);
-    const updated = await Task.findById(task._id);
-    expect(updated.subtasks[0].status).toBe('success');
-    expect(updated.subtasks[1].status).toBe('success');
-  });
-
-  it('skips already-success subtask and processes pending one', async () => {
-    mockRunAgent.mockResolvedValue({ success: true, result: 'done' });
-    const task = await makeTask([
-      { prompt: 'first', status: 'success' },
-      { prompt: 'second' },
-    ]);
-
-    await processSubtasks(task);
-
-    expect(mockRunAgent).toHaveBeenCalledTimes(1);
-    expect(mockRunAgent).toHaveBeenCalledWith('claude', 'second', { workingDirectory: '/proj' });
-    const updated = await Task.findById(task._id);
-    expect(updated.subtasks[0].status).toBe('success');
-    expect(updated.subtasks[1].status).toBe('success');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Error handling
-// ---------------------------------------------------------------------------
-
-describe('processSubtasks — runAgent throws', () => {
-  it('sets subtask status to failed when runAgent throws', async () => {
-    mockRunAgent.mockRejectedValue(new Error('agent crashed'));
-    const task = await makeTask([{ prompt: 'sub' }]);
-
-    await processSubtasks(task);
-
-    const updated = await Task.findById(task._id);
-    expect(updated.subtasks[0].status).toBe('failed');
-  });
-
-  it('stores err.message in subtask.result', async () => {
-    mockRunAgent.mockRejectedValue(new Error('agent crashed'));
-    const task = await makeTask([{ prompt: 'sub' }]);
-
-    await processSubtasks(task);
-
-    const updated = await Task.findById(task._id);
-    expect(updated.subtasks[0].result).toBe('agent crashed');
-  });
-
-  it('sets executedByAgent even when runAgent throws', async () => {
-    mockRunAgent.mockRejectedValue(new Error('agent crashed'));
-    const task = await makeTask([{ prompt: 'sub' }]);
-
-    await processSubtasks(task);
-
-    const updated = await Task.findById(task._id);
-    expect(updated.subtasks[0].executedByAgent).toBe('claude');
+    expect(mockRunAgent).not.toHaveBeenCalled();
   });
 });

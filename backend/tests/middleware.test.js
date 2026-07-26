@@ -1,13 +1,34 @@
 import { jest } from '@jest/globals';
+import RedisMock from 'ioredis-mock';
 
-// Mock connectDB before server.js is loaded
-jest.unstable_mockModule('../config/db.js', () => ({
-  connectDB: jest.fn().mockResolvedValue(undefined),
+const redisMock = new RedisMock();
+
+jest.unstable_mockModule('../../shared/redis/client.js', () => ({
+  getRedis: () => redisMock,
+  closeRedis: jest.fn(),
+  resetRedis: jest.fn(),
+}));
+
+jest.unstable_mockModule('../../shared/queue/taskQueue.js', () => ({
+  enqueueTask: jest.fn().mockResolvedValue(undefined),
+  enqueueSubtask: jest.fn().mockResolvedValue(undefined),
+  removeJob: jest.fn().mockResolvedValue(undefined),
+  getTaskQueue: jest.fn().mockReturnValue({ getJobCounts: jest.fn().mockResolvedValue({}) }),
+  closeTaskQueue: jest.fn(),
+  resetTaskQueue: jest.fn(),
+}));
+
+jest.unstable_mockModule('../config/redis.js', () => ({
+  connectRedis: jest.fn().mockResolvedValue(undefined),
 }));
 
 const { default: request } = await import('supertest');
 const { default: app } = await import('../server.js');
 const { errorHandler } = await import('../middleware/errorHandler.js');
+
+afterEach(async () => {
+  await redisMock.flushall();
+});
 
 // ---------------------------------------------------------------------------
 // HTTP route tests (via supertest)

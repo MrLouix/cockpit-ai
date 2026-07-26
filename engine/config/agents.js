@@ -161,4 +161,41 @@ function buildArgs(agentName, prompt, useJson = false) {
   return finalArgs;
 }
 
+// ---------------------------------------------------------------------------
+// Rate limit detection patterns per agent
+// Each entry: array of { pattern: RegExp, extractRetryAfter?: (match, output) => ms|null }
+// ---------------------------------------------------------------------------
+export const RATE_LIMIT_PATTERNS = {
+  claude: [
+    { pattern: /rate[_\s-]?limit/i },
+    { pattern: /quota[_\s-]?exceeded/i },
+    { pattern: /HTTP\s+429/i },
+    { pattern: /too\s+many\s+requests/i },
+    { pattern: /overloaded/i },
+  ],
+  hermes: [
+    { pattern: /rate[_\s-]?limit/i },
+    { pattern: /HTTP\s+429/i },
+    { pattern: /too\s+many\s+requests/i },
+  ],
+  vibe: [
+    { pattern: /rate[_\s-]?limit/i },
+    { pattern: /HTTP\s+429/i },
+    { pattern: /too\s+many\s+requests/i },
+  ],
+  antigravity: [
+    { pattern: /rate[_\s-]?limit/i },
+    { pattern: /HTTP\s+429/i },
+    { pattern: /too\s+many\s+requests/i },
+  ],
+  opencode: [
+    { pattern: /rate[_\s-]?limit/i },
+    { pattern: /HTTP\s+429/i },
+    { pattern: /too\s+many\s+requests/i },
+  ],
+};
+
+// All known agent names (for health endpoint iteration)
+export const AGENT_TYPES = Object.keys(agents);
+
 export { agents, getAgent, listInstalled, buildArgs };

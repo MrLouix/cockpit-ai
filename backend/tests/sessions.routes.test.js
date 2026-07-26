@@ -1,33 +1,35 @@
-import mongoose from 'mongoose';
-import { MongoMemoryServer } from 'mongodb-memory-server';
 import { jest } from '@jest/globals';
+import RedisMock from 'ioredis-mock';
 
-// Mock connectDB so server.js never touches a real database
-jest.unstable_mockModule('../config/db.js', () => ({
-  connectDB: jest.fn().mockResolvedValue(undefined),
+const redisMock = new RedisMock();
+
+jest.unstable_mockModule('../../shared/redis/client.js', () => ({
+  getRedis: () => redisMock,
+  closeRedis: jest.fn(),
+  resetRedis: jest.fn(),
 }));
 
+jest.unstable_mockModule('../../shared/queue/taskQueue.js', () => ({
+  enqueueTask: jest.fn().mockResolvedValue(undefined),
+  enqueueSubtask: jest.fn().mockResolvedValue(undefined),
+  removeJob: jest.fn().mockResolvedValue(undefined),
+  getTaskQueue: jest.fn().mockReturnValue({ getJobCounts: jest.fn().mockResolvedValue({}) }),
+  closeTaskQueue: jest.fn(),
+  resetTaskQueue: jest.fn(),
+}));
+
+jest.unstable_mockModule('../config/redis.js', () => ({
+  connectRedis: jest.fn().mockResolvedValue(undefined),
+}));
+
+// Dynamic imports AFTER mocks
 const { default: request } = await import('supertest');
 const { default: app } = await import('../server.js');
-const { Session } = await import('../models/Session.js');
-const { Task } = await import('../models/Task.js');
-
-let mongod;
-
-beforeAll(async () => {
-  mongod = await MongoMemoryServer.create();
-  await mongoose.connect(mongod.getUri());
-});
-
-afterAll(async () => {
-  await mongoose.disconnect();
-  await mongod.stop();
-});
+const sessionStore = await import('../../shared/redis/sessionStore.js');
+const taskStore = await import('../../shared/redis/taskStore.js');
 
 afterEach(async () => {
-  for (const col of Object.values(mongoose.connection.collections)) {
-    await col.deleteMany({});
-  }
+  await redisMock.flushall();
 });
 
 // ---------------------------------------------------------------------------
@@ -42,8 +44,8 @@ describe('GET /api/sessions', () => {
   });
 
   it('returns all sessions sorted by createdAt descending', async () => {
-    await Session.create({ directory: '/proj/a', titre: 'A' });
-    await Session.create({ directory: '/proj/b', titre: 'B' });
+    await sessionStore.createSession({ directory: '/proj/a', titre: 'A' });
+    await sessionStore.createSession({ directory: '/proj/b', titre: 'B' });
     const res = await request(app).get('/api/sessions');
     expect(res.status).toBe(200);
     expect(res.body.sessions).toHaveLength(2);
@@ -92,21 +94,21 @@ describe('POST /api/sessions', () => {
 
 describe('GET /api/sessions/:id', () => {
   it('returns 200 with the session when it exists', async () => {
-    const created = await Session.create({ directory: '/proj', titre: 'Test' });
+    const created = await sessionStore.createSession({ directory: '/proj', titre: 'Test' });
     const res = await request(app).get(`/api/sessions/${created._id}`);
     expect(res.status).toBe(200);
-    expect(res.body.session._id).toBe(created._id.toString());
+    expect(res.body.session._id).toBe(created._id);
     expect(res.body.session.titre).toBe('Test');
   });
 
-  it('returns 404 for a valid but non-existent ObjectId', async () => {
-    const fakeId = new mongoose.Types.ObjectId();
+  it('returns 404 for a valid but non-existent UUID', async () => {
+    const fakeId = '00000000-0000-0000-0000-000000000000';
     const res = await request(app).get(`/api/sessions/${fakeId}`);
     expect(res.status).toBe(404);
     expect(res.body.error).toBe('Session not found');
   });
 
-  it('returns 400 for an invalid ObjectId (CastError)', async () => {
+  it('returns 400 for an invalid ID format', async () => {
     const res = await request(app).get('/api/sessions/not-a-valid-id');
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('Invalid ID format');
@@ -119,7 +121,7 @@ describe('GET /api/sessions/:id', () => {
 
 describe('PUT /api/sessions/:id', () => {
   it('updates directory and returns the updated session', async () => {
-    const created = await Session.create({ directory: '/old', titre: 'Old Title' });
+    const created = await sessionStore.createSession({ directory: '/old', titre: 'Old Title' });
     const res = await request(app)
       .put(`/api/sessions/${created._id}`)
       .send({ directory: '/new' });
@@ -129,7 +131,7 @@ describe('PUT /api/sessions/:id', () => {
   });
 
   it('updates titre and returns the updated session', async () => {
-    const created = await Session.create({ directory: '/proj', titre: 'Old' });
+    const created = await sessionStore.createSession({ directory: '/proj', titre: 'Old' });
     const res = await request(app)
       .put(`/api/sessions/${created._id}`)
       .send({ titre: 'New Title' });
@@ -138,13 +140,13 @@ describe('PUT /api/sessions/:id', () => {
   });
 
   it('returns 404 for a non-existent session', async () => {
-    const fakeId = new mongoose.Types.ObjectId();
+    const fakeId = '00000000-0000-0000-0000-000000000000';
     const res = await request(app).put(`/api/sessions/${fakeId}`).send({ titre: 'X' });
     expect(res.status).toBe(404);
     expect(res.body.error).toBe('Session not found');
   });
 
-  it('returns 400 for an invalid ObjectId', async () => {
+  it('returns 400 for an invalid ID format', async () => {
     const res = await request(app).put('/api/sessions/bad-id').send({ titre: 'X' });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('Invalid ID format');
@@ -157,36 +159,36 @@ describe('PUT /api/sessions/:id', () => {
 
 describe('DELETE /api/sessions/:id', () => {
   it('deletes the session and returns success message', async () => {
-    const created = await Session.create({ directory: '/proj', titre: 'To Delete' });
+    const created = await sessionStore.createSession({ directory: '/proj', titre: 'To Delete' });
     const res = await request(app).delete(`/api/sessions/${created._id}`);
     expect(res.status).toBe(200);
     expect(res.body.message).toBe('Session and associated tasks deleted');
-    const gone = await Session.findById(created._id);
+    const gone = await sessionStore.getSession(created._id);
     expect(gone).toBeNull();
   });
 
   it('cascades deletion to associated tasks', async () => {
-    const session = await Session.create({ directory: '/proj', titre: 'Has Tasks' });
-    await Task.create({ sessionId: session._id, prompt: 'Task A' });
-    await Task.create({ sessionId: session._id, prompt: 'Task B' });
+    const session = await sessionStore.createSession({ directory: '/proj', titre: 'Has Tasks' });
+    await taskStore.createTask({ sessionId: session._id, prompt: 'Task A' });
+    await taskStore.createTask({ sessionId: session._id, prompt: 'Task B' });
 
-    const before = await Task.countDocuments({ sessionId: session._id });
+    const { total: before } = await taskStore.getTasks({});
     expect(before).toBe(2);
 
     await request(app).delete(`/api/sessions/${session._id}`);
 
-    const after = await Task.countDocuments({ sessionId: session._id });
+    const { total: after } = await taskStore.getTasks({});
     expect(after).toBe(0);
   });
 
   it('returns 404 for a non-existent session', async () => {
-    const fakeId = new mongoose.Types.ObjectId();
+    const fakeId = '00000000-0000-0000-0000-000000000000';
     const res = await request(app).delete(`/api/sessions/${fakeId}`);
     expect(res.status).toBe(404);
     expect(res.body.error).toBe('Session not found');
   });
 
-  it('returns 400 for an invalid ObjectId', async () => {
+  it('returns 400 for an invalid ID format', async () => {
     const res = await request(app).delete('/api/sessions/bad-id');
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('Invalid ID format');

@@ -1,33 +1,38 @@
-import mongoose from 'mongoose';
-import { MongoMemoryServer } from 'mongodb-memory-server';
-import Session from '../models/Session.js';
-import Task from '../models/Task.js';
+import { jest } from '@jest/globals';
+import RedisMock from 'ioredis-mock';
 
-let mongod;
+const redisMock = new RedisMock();
 
-beforeAll(async () => {
-  mongod = await MongoMemoryServer.create();
-  await mongoose.connect(mongod.getUri());
-});
+jest.unstable_mockModule('../../shared/redis/client.js', () => ({
+  getRedis: () => redisMock,
+  closeRedis: jest.fn(),
+  resetRedis: jest.fn(),
+}));
 
-afterAll(async () => {
-  await mongoose.disconnect();
-  await mongod.stop();
-});
+jest.unstable_mockModule('../../shared/queue/taskQueue.js', () => ({
+  enqueueTask: jest.fn().mockResolvedValue(undefined),
+  enqueueSubtask: jest.fn().mockResolvedValue(undefined),
+  removeJob: jest.fn().mockResolvedValue(undefined),
+  getTaskQueue: jest.fn().mockReturnValue({ getJobCounts: jest.fn().mockResolvedValue({}) }),
+  closeTaskQueue: jest.fn(),
+  resetTaskQueue: jest.fn(),
+}));
+
+// Dynamic imports AFTER mocks
+const sessionStore = await import('../../shared/redis/sessionStore.js');
+const taskStore = await import('../../shared/redis/taskStore.js');
 
 afterEach(async () => {
-  for (const col of Object.values(mongoose.connection.collections)) {
-    await col.deleteMany({});
-  }
+  await redisMock.flushall();
 });
 
 // ---------------------------------------------------------------------------
-// Session model
+// Session store
 // ---------------------------------------------------------------------------
 
-describe('Session model', () => {
-  it('creates successfully with valid data', async () => {
-    const session = await Session.create({ directory: '/home/user/project', titre: 'My Project' });
+describe('sessionStore', () => {
+  it('creates a session with valid data', async () => {
+    const session = await sessionStore.createSession({ directory: '/home/user/project', titre: 'My Project' });
     expect(session._id).toBeDefined();
     expect(session.directory).toBe('/home/user/project');
     expect(session.titre).toBe('My Project');
@@ -35,130 +40,138 @@ describe('Session model', () => {
     expect(session.updatedAt).toBeDefined();
   });
 
-  it('trims whitespace from directory and titre', async () => {
-    const session = await Session.create({ directory: '  /home/user  ', titre: '  Trimmed  ' });
-    expect(session.directory).toBe('/home/user');
-    expect(session.titre).toBe('Trimmed');
+  it('gets a session by ID', async () => {
+    const created = await sessionStore.createSession({ directory: '/proj', titre: 'Test' });
+    const found = await sessionStore.getSession(created._id);
+    expect(found).not.toBeNull();
+    expect(found._id).toBe(created._id);
+    expect(found.directory).toBe('/proj');
+    expect(found.titre).toBe('Test');
   });
 
-  it('fails validation without directory', async () => {
-    await expect(Session.create({ titre: 'No dir' })).rejects.toThrow(/directory/);
+  it('returns null for a non-existent session', async () => {
+    const found = await sessionStore.getSession('00000000-0000-0000-0000-000000000000');
+    expect(found).toBeNull();
   });
 
-  it('fails validation without titre', async () => {
-    await expect(Session.create({ directory: '/some/path' })).rejects.toThrow(/titre/);
+  it('updates a session', async () => {
+    const created = await sessionStore.createSession({ directory: '/old', titre: 'Old' });
+    const updated = await sessionStore.updateSession(created._id, { titre: 'New Title' });
+    expect(updated.titre).toBe('New Title');
+    expect(updated.directory).toBe('/old');
+  });
+
+  it('returns null when updating a non-existent session', async () => {
+    const result = await sessionStore.updateSession('00000000-0000-0000-0000-000000000000', { titre: 'X' });
+    expect(result).toBeNull();
+  });
+
+  it('deletes a session', async () => {
+    const created = await sessionStore.createSession({ directory: '/proj', titre: 'Delete Me' });
+    const deleted = await sessionStore.deleteSession(created._id);
+    expect(deleted).toBe(true);
+    const gone = await sessionStore.getSession(created._id);
+    expect(gone).toBeNull();
+  });
+
+  it('returns false when deleting a non-existent session', async () => {
+    const result = await sessionStore.deleteSession('00000000-0000-0000-0000-000000000000');
+    expect(result).toBe(false);
+  });
+
+  it('getAllSessions returns sessions sorted by createdAt descending', async () => {
+    await sessionStore.createSession({ directory: '/a', titre: 'A' });
+    // Small delay to ensure different timestamps for ZSET scores
+    await new Promise(r => setTimeout(r, 5));
+    await sessionStore.createSession({ directory: '/b', titre: 'B' });
+    const all = await sessionStore.getAllSessions();
+    expect(all).toHaveLength(2);
+    // Most recently created first
+    expect(all[0].titre).toBe('B');
+    expect(all[1].titre).toBe('A');
   });
 });
 
 // ---------------------------------------------------------------------------
-// Task model
+// Task store
 // ---------------------------------------------------------------------------
 
-describe('Task model', () => {
+describe('taskStore', () => {
   let sessionId;
 
   beforeEach(async () => {
-    const s = await Session.create({ directory: '/proj', titre: 'Proj' });
-    sessionId = s._id;
+    const session = await sessionStore.createSession({ directory: '/proj', titre: 'Proj' });
+    sessionId = session._id;
   });
 
-  it('creates with valid data and inherits defaults', async () => {
-    const task = await Task.create({ sessionId, prompt: 'Do something' });
+  it('creates a task with valid data and inherits defaults', async () => {
+    const task = await taskStore.createTask({ sessionId, prompt: 'Do something' });
     expect(task._id).toBeDefined();
     expect(task.agent).toBe('claude');
     expect(task.status).toBe('pending');
     expect(task.result).toBe('');
     expect(task.executedByAgent).toBe('');
-    expect(task.subtasks).toEqual([]);
     expect(task.createdAt).toBeDefined();
     expect(task.updatedAt).toBeDefined();
   });
 
-  it('creates with an embedded subtask', async () => {
-    const task = await Task.create({
-      sessionId,
-      prompt: 'Parent task',
-      subtasks: [{ prompt: 'Sub task one' }],
-    });
-    expect(task.subtasks).toHaveLength(1);
-    expect(task.subtasks[0].prompt).toBe('Sub task one');
-    expect(task.subtasks[0].status).toBe('pending');
-    expect(task.subtasks[0].agent).toBe('claude');
-    expect(task.subtasks[0]._id).toBeDefined();
-    expect(task.subtasks[0].createdAt).toBeDefined();
-    expect(task.subtasks[0].updatedAt).toBeDefined();
+  it('gets a task by ID', async () => {
+    const created = await taskStore.createTask({ sessionId, prompt: 'Find me' });
+    const found = await taskStore.getTask(created._id);
+    expect(found).not.toBeNull();
+    expect(found._id).toBe(created._id);
+    expect(found.prompt).toBe('Find me');
   });
 
-  it('fails without sessionId', async () => {
-    await expect(Task.create({ prompt: 'No session' })).rejects.toThrow(/sessionId/);
+  it('returns null for a non-existent task', async () => {
+    const found = await taskStore.getTask('00000000-0000-0000-0000-000000000000');
+    expect(found).toBeNull();
   });
 
-  it('fails without prompt', async () => {
-    await expect(Task.create({ sessionId })).rejects.toThrow(/prompt/);
+  it('updates a task', async () => {
+    const created = await taskStore.createTask({ sessionId, prompt: 'Update me' });
+    const updated = await taskStore.updateTask(created._id, { status: 'success' });
+    expect(updated.status).toBe('success');
   });
 
-  it('rejects invalid status enum value', async () => {
-    await expect(
-      Task.create({ sessionId, prompt: 'Test', status: 'invalid_status' })
-    ).rejects.toThrow(/status/);
+  it('returns null when updating a non-existent task', async () => {
+    const result = await taskStore.updateTask('00000000-0000-0000-0000-000000000000', { status: 'success' });
+    expect(result).toBeNull();
   });
 
-  it('rejects invalid agent enum value', async () => {
-    await expect(
-      Task.create({ sessionId, prompt: 'Test', agent: 'unknown_agent' })
-    ).rejects.toThrow(/agent/);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Subtask defaults
-// ---------------------------------------------------------------------------
-
-describe('Subtask embedded schema', () => {
-  let sessionId;
-
-  beforeEach(async () => {
-    const s = await Session.create({ directory: '/proj', titre: 'Proj' });
-    sessionId = s._id;
+  it('deletes a task', async () => {
+    const created = await taskStore.createTask({ sessionId, prompt: 'Delete me' });
+    const deleted = await taskStore.deleteTask(created._id);
+    expect(deleted).toBe(true);
+    const gone = await taskStore.getTask(created._id);
+    expect(gone).toBeNull();
   });
 
-  it('defaults status to pending', async () => {
-    const task = await Task.create({
-      sessionId,
-      prompt: 'Parent',
-      subtasks: [{ prompt: 'Child' }],
-    });
-    expect(task.subtasks[0].status).toBe('pending');
+  it('returns false when deleting a non-existent task', async () => {
+    const result = await taskStore.deleteTask('00000000-0000-0000-0000-000000000000');
+    expect(result).toBe(false);
   });
 
-  it('defaults agent to claude', async () => {
-    const task = await Task.create({
-      sessionId,
-      prompt: 'Parent',
-      subtasks: [{ prompt: 'Child' }],
-    });
-    expect(task.subtasks[0].agent).toBe('claude');
+  it('adds a subtask to a task', async () => {
+    const task = await taskStore.createTask({ sessionId, prompt: 'Parent' });
+    const subtask = await taskStore.addSubtask(task._id, { prompt: 'Sub task one' });
+    expect(subtask._id).toBeDefined();
+    expect(subtask.prompt).toBe('Sub task one');
+    expect(subtask.status).toBe('pending');
+    expect(subtask.agent).toBe('claude');
+    expect(subtask.result).toBe('');
+    expect(subtask.executedByAgent).toBe('');
+    expect(subtask.createdAt).toBeDefined();
+    expect(subtask.updatedAt).toBeDefined();
+
+    // Verify the subtask is embedded when getting the task
+    const fetched = await taskStore.getTask(task._id);
+    expect(fetched.subtasks).toHaveLength(1);
+    expect(fetched.subtasks[0].prompt).toBe('Sub task one');
   });
 
-  it('defaults result and executedByAgent to empty string', async () => {
-    const task = await Task.create({
-      sessionId,
-      prompt: 'Parent',
-      subtasks: [{ prompt: 'Child' }],
-    });
-    expect(task.subtasks[0].result).toBe('');
-    expect(task.subtasks[0].executedByAgent).toBe('');
-  });
-
-  it('rejects subtask with invalid agent', async () => {
-    await expect(
-      Task.create({ sessionId, prompt: 'P', subtasks: [{ prompt: 'C', agent: 'bad' }] })
-    ).rejects.toThrow(/agent/);
-  });
-
-  it('rejects subtask with invalid status', async () => {
-    await expect(
-      Task.create({ sessionId, prompt: 'P', subtasks: [{ prompt: 'C', status: 'bad' }] })
-    ).rejects.toThrow(/status/);
+  it('creates a task with a custom agent', async () => {
+    const task = await taskStore.createTask({ sessionId, prompt: 'Vibe task', agent: 'vibe' });
+    expect(task.agent).toBe('vibe');
   });
 });

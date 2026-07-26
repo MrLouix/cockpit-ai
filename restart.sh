@@ -2,36 +2,36 @@
 # CockpitAI — Redémarrer les 3 services
 set -e
 
-MONGODB_HOST="100.71.107.100"
-MONGODB_PORT=27017
+REDIS_HOST="127.0.0.1"
+REDIS_PORT=6379
 
 cd /home/ai_agent/projects/cockpitAI
 
-# ── 0. Vérifier / démarrer MongoDB ──────────────────────────────────
-echo "🔍 Vérification de MongoDB ($MONGODB_HOST:$MONGODB_PORT)..."
-if timeout 5 bash -c "echo 'ping' | nc -w 3 $MONGODB_HOST $MONGODB_PORT" >/dev/null 2>&1; then
-    echo "✅ MongoDB est accessible en $MONGODB_HOST:$MONGODB_PORT"
+# ── 0. Vérifier / démarrer Redis ────────────────────────────────────
+echo "🔍 Vérification de Redis ($REDIS_HOST:$REDIS_PORT)..."
+if redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" ping 2>/dev/null | grep -q PONG; then
+    echo "✅ Redis est accessible en $REDIS_HOST:$REDIS_PORT"
 else
-    echo "⚠️  MongoDB inaccessible, tentative de démarrage..."
-    if pgrep -a mongod >/dev/null 2>&1; then
-        echo "📌 mongod est en cours d'exécution mais ne répond pas, restart..."
-        pkill -9 mongod 2>/dev/null || true
+    echo "⚠️  Redis inaccessible, tentative de démarrage..."
+    if pgrep -a redis-server >/dev/null 2>&1; then
+        echo "📌 redis-server est en cours d'exécution mais ne répond pas, restart..."
+        pkill -9 redis-server 2>/dev/null || true
         sleep 2
     fi
-    # Démarrer mongod en arrière-plan (fichier de log dans le répertoire cockpitAI)
-    mongod --dbpath /var/lib/mongodb --logpath /home/ai_agent/projects/cockpitAI/mongod.log --fork --bind_ip_all 2>/dev/null \
-        || mongod --dbpath /data/db --logpath /home/ai_agent/projects/cockpitAI/mongod.log --fork --bind_ip_all 2>/dev/null \
-        || echo "⚠️  Impossible de démarrer mongod (exécute-le manuellement)"
-    # Attendre que mongod soit prêt
+    # Démarrer redis-server en arrière-plan avec persistance AOF
+    redis-server --appendonly yes --dir /var/lib/redis --daemonize yes --bind 0.0.0.0 2>/dev/null \
+        || redis-server --appendonly yes --daemonize yes --bind 0.0.0.0 2>/dev/null \
+        || echo "⚠️  Impossible de démarrer redis-server (exécute-le manuellement)"
+    # Attendre que redis-server soit prêt
     for i in $(seq 1 30); do
-        if timeout 2 bash -c "echo 'ping' | nc -w 1 $MONGODB_HOST $MONGODB_PORT" >/dev/null 2>&1; then
-            echo "✅ MongoDB démarré avec succès"
+        if redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" ping 2>/dev/null | grep -q PONG; then
+            echo "✅ Redis démarré avec succès"
             break
         fi
         sleep 1
     done
     if [ "$i" -eq 30 ]; then
-        echo "❌ MongoDB n'a pas démarré à temps — vérifie mongod.log"
+        echo "❌ Redis n'a pas démarré à temps"
     fi
 fi
 
@@ -62,14 +62,13 @@ fi
 
 sleep 1
 
-# ── 2. Vérifier la connexion MongoDB depuis le backend ───────────────
+# ── 2. Vérifier la connexion Redis depuis le backend ─────────────────
 echo ""
-echo "🔍 Test de connexion backend → MongoDB..."
-# on utilise nc sur le port — le backend fera le vrai test au démarrage
-if timeout 5 bash -c "echo 'ping' | nc -w 3 $MONGODB_HOST $MONGODB_PORT" >/dev/null 2>&1; then
-    echo "✅ MongoDB reachable from backend"
+echo "🔍 Test de connexion backend → Redis..."
+if redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" ping 2>/dev/null | grep -q PONG; then
+    echo "✅ Redis reachable from backend"
 else
-    echo "❌ MongoDB unreachable from backend — check network/firewall"
+    echo "❌ Redis unreachable from backend — check redis-server"
 fi
 
 # ── 3. Démarrage des services ───────────────────────────────────────

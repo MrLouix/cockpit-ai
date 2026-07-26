@@ -1,7 +1,7 @@
 {
   "name": "ai-engine",
   "version": "1.0.0",
-  "description": "AI Engine for cockpitAI — polls MongoDB and dispatches tasks to CLI agents",
+  "description": "AI Engine for cockpitAI — BullMQ worker dispatching tasks to CLI agents",
   "type": "module",
   "main": "aiEngine.js",
   "scripts": {
@@ -10,13 +10,14 @@
     "test": "node --experimental-vm-modules node_modules/.bin/jest --testTimeout=15000"
   },
   "dependencies": {
+    "bullmq": "^5.0.0",
     "dotenv": "^16.3.1",
     "express": "^4.21.0",
-    "mongoose": "^8.0.3"
+    "ioredis": "^5.4.0"
   },
   "devDependencies": {
-    "jest": "^29.0.0",
-    "mongodb-memory-server": "^9.0.0"
+    "ioredis-mock": "^8.9.0",
+    "jest": "^29.0.0"
   },
   "jest": {
     "testEnvironment": "node",

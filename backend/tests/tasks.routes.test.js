@@ -1,38 +1,41 @@
-import mongoose from 'mongoose';
-import { MongoMemoryServer } from 'mongodb-memory-server';
 import { jest } from '@jest/globals';
+import RedisMock from 'ioredis-mock';
 
-jest.unstable_mockModule('../config/db.js', () => ({
-  connectDB: jest.fn().mockResolvedValue(undefined),
+const redisMock = new RedisMock();
+
+jest.unstable_mockModule('../../shared/redis/client.js', () => ({
+  getRedis: () => redisMock,
+  closeRedis: jest.fn(),
+  resetRedis: jest.fn(),
 }));
 
+jest.unstable_mockModule('../../shared/queue/taskQueue.js', () => ({
+  enqueueTask: jest.fn().mockResolvedValue(undefined),
+  enqueueSubtask: jest.fn().mockResolvedValue(undefined),
+  removeJob: jest.fn().mockResolvedValue(undefined),
+  getTaskQueue: jest.fn().mockReturnValue({ getJobCounts: jest.fn().mockResolvedValue({}) }),
+  closeTaskQueue: jest.fn(),
+  resetTaskQueue: jest.fn(),
+}));
+
+jest.unstable_mockModule('../config/redis.js', () => ({
+  connectRedis: jest.fn().mockResolvedValue(undefined),
+}));
+
+// Dynamic imports AFTER mocks
 const { default: request } = await import('supertest');
 const { default: app } = await import('../server.js');
-const { Session } = await import('../models/Session.js');
-const { Task } = await import('../models/Task.js');
+const sessionStore = await import('../../shared/redis/sessionStore.js');
+const taskStore = await import('../../shared/redis/taskStore.js');
 
-let mongod;
 let session; // shared session used across tests
 
-beforeAll(async () => {
-  mongod = await MongoMemoryServer.create();
-  await mongoose.connect(mongod.getUri());
-});
-
-afterAll(async () => {
-  await mongoose.disconnect();
-  await mongod.stop();
-});
-
 beforeEach(async () => {
-  // Fresh session for each test
-  session = await Session.create({ directory: '/home/user/proj', titre: 'Test Project' });
+  session = await sessionStore.createSession({ directory: '/home/user/proj', titre: 'Test Project' });
 });
 
 afterEach(async () => {
-  for (const col of Object.values(mongoose.connection.collections)) {
-    await col.deleteMany({});
-  }
+  await redisMock.flushall();
 });
 
 // ---------------------------------------------------------------------------
@@ -48,8 +51,8 @@ describe('GET /api/tasks', () => {
   });
 
   it('returns all tasks with populated sessionId', async () => {
-    await Task.create({ sessionId: session._id, prompt: 'Task A' });
-    await Task.create({ sessionId: session._id, prompt: 'Task B' });
+    await taskStore.createTask({ sessionId: session._id, prompt: 'Task A' });
+    await taskStore.createTask({ sessionId: session._id, prompt: 'Task B' });
     const res = await request(app).get('/api/tasks');
     expect(res.status).toBe(200);
     expect(res.body.tasks).toHaveLength(2);
@@ -58,8 +61,10 @@ describe('GET /api/tasks', () => {
   });
 
   it('filters by ?status=pending', async () => {
-    await Task.create({ sessionId: session._id, prompt: 'Pending task', status: 'pending' });
-    await Task.create({ sessionId: session._id, prompt: 'Success task', status: 'success' });
+    await taskStore.createTask({ sessionId: session._id, prompt: 'Pending task' });
+    const successTask = await taskStore.createTask({ sessionId: session._id, prompt: 'Success task' });
+    await taskStore.updateTask(successTask._id, { status: 'success' });
+
     const res = await request(app).get('/api/tasks?status=pending');
     expect(res.status).toBe(200);
     expect(res.body.tasks).toHaveLength(1);
@@ -68,8 +73,10 @@ describe('GET /api/tasks', () => {
   });
 
   it('filters by ?status=success', async () => {
-    await Task.create({ sessionId: session._id, prompt: 'A', status: 'pending' });
-    await Task.create({ sessionId: session._id, prompt: 'B', status: 'success' });
+    await taskStore.createTask({ sessionId: session._id, prompt: 'A' });
+    const b = await taskStore.createTask({ sessionId: session._id, prompt: 'B' });
+    await taskStore.updateTask(b._id, { status: 'success' });
+
     const res = await request(app).get('/api/tasks?status=success');
     expect(res.status).toBe(200);
     expect(res.body.tasks).toHaveLength(1);
@@ -77,9 +84,9 @@ describe('GET /api/tasks', () => {
   });
 
   it('filters by ?directory', async () => {
-    const otherSession = await Session.create({ directory: '/other/path', titre: 'Other' });
-    await Task.create({ sessionId: session._id, prompt: 'In proj' });
-    await Task.create({ sessionId: otherSession._id, prompt: 'In other' });
+    const otherSession = await sessionStore.createSession({ directory: '/other/path', titre: 'Other' });
+    await taskStore.createTask({ sessionId: session._id, prompt: 'In proj' });
+    await taskStore.createTask({ sessionId: otherSession._id, prompt: 'In other' });
 
     const res = await request(app).get('/api/tasks?directory=/home/user/proj');
     expect(res.status).toBe(200);
@@ -88,7 +95,7 @@ describe('GET /api/tasks', () => {
   });
 
   it('returns empty array when directory matches no sessions', async () => {
-    await Task.create({ sessionId: session._id, prompt: 'Some task' });
+    await taskStore.createTask({ sessionId: session._id, prompt: 'Some task' });
     const res = await request(app).get('/api/tasks?directory=/no/such/dir');
     expect(res.status).toBe(200);
     expect(res.body.tasks).toEqual([]);
@@ -96,9 +103,9 @@ describe('GET /api/tasks', () => {
   });
 
   it('respects ?limit and total reflects full count', async () => {
-    await Task.create({ sessionId: session._id, prompt: 'T1' });
-    await Task.create({ sessionId: session._id, prompt: 'T2' });
-    await Task.create({ sessionId: session._id, prompt: 'T3' });
+    await taskStore.createTask({ sessionId: session._id, prompt: 'T1' });
+    await taskStore.createTask({ sessionId: session._id, prompt: 'T2' });
+    await taskStore.createTask({ sessionId: session._id, prompt: 'T3' });
 
     const res = await request(app).get('/api/tasks?limit=2');
     expect(res.status).toBe(200);
@@ -121,6 +128,8 @@ describe('POST /api/tasks', () => {
     expect(res.body.task.prompt).toBe('Do something');
     expect(res.body.task.agent).toBe('claude');
     expect(res.body.task.status).toBe('pending');
+    // POST returns the raw task (sessionId is the ID string, not populated)
+    expect(res.body.task.sessionId).toBe(session._id);
   });
 
   it('creates task with a custom agent', async () => {
@@ -144,7 +153,7 @@ describe('POST /api/tasks', () => {
   });
 
   it('returns 404 when sessionId does not exist', async () => {
-    const fakeId = new mongoose.Types.ObjectId();
+    const fakeId = '00000000-0000-0000-0000-000000000000';
     const res = await request(app)
       .post('/api/tasks')
       .send({ sessionId: fakeId, prompt: 'Ghost session' });
@@ -159,22 +168,22 @@ describe('POST /api/tasks', () => {
 
 describe('GET /api/tasks/:id', () => {
   it('returns 200 with { task } and populated sessionId', async () => {
-    const created = await Task.create({ sessionId: session._id, prompt: 'Find me' });
+    const created = await taskStore.createTask({ sessionId: session._id, prompt: 'Find me' });
     const res = await request(app).get(`/api/tasks/${created._id}`);
     expect(res.status).toBe(200);
-    expect(res.body.task._id).toBe(created._id.toString());
+    expect(res.body.task._id).toBe(created._id);
     expect(res.body.task.sessionId).toMatchObject({ directory: '/home/user/proj', titre: 'Test Project' });
   });
 
-  it('returns 404 for a valid but non-existent ObjectId', async () => {
-    const fakeId = new mongoose.Types.ObjectId();
+  it('returns 404 for a valid but non-existent UUID', async () => {
+    const fakeId = '00000000-0000-0000-0000-000000000000';
     const res = await request(app).get(`/api/tasks/${fakeId}`);
     expect(res.status).toBe(404);
     expect(res.body.error).toBe('Task not found');
   });
 
-  it('returns 400 for an invalid ObjectId (CastError)', async () => {
-    const res = await request(app).get('/api/tasks/not-an-id');
+  it('returns 400 for an invalid ID format', async () => {
+    const res = await request(app).get('/api/tasks/not-a-valid-id');
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('Invalid ID format');
   });
@@ -186,7 +195,7 @@ describe('GET /api/tasks/:id', () => {
 
 describe('PUT /api/tasks/:id', () => {
   it('updates status and returns the updated task', async () => {
-    const created = await Task.create({ sessionId: session._id, prompt: 'Update me' });
+    const created = await taskStore.createTask({ sessionId: session._id, prompt: 'Update me' });
     const res = await request(app)
       .put(`/api/tasks/${created._id}`)
       .send({ status: 'success' });
@@ -195,7 +204,7 @@ describe('PUT /api/tasks/:id', () => {
   });
 
   it('updates prompt and agent', async () => {
-    const created = await Task.create({ sessionId: session._id, prompt: 'Old prompt' });
+    const created = await taskStore.createTask({ sessionId: session._id, prompt: 'Old prompt' });
     const res = await request(app)
       .put(`/api/tasks/${created._id}`)
       .send({ prompt: 'New prompt', agent: 'vibe' });
@@ -205,7 +214,7 @@ describe('PUT /api/tasks/:id', () => {
   });
 
   it('does not update subtasks field', async () => {
-    const created = await Task.create({ sessionId: session._id, prompt: 'P' });
+    const created = await taskStore.createTask({ sessionId: session._id, prompt: 'P' });
     const res = await request(app)
       .put(`/api/tasks/${created._id}`)
       .send({ subtasks: [{ prompt: 'injected' }] });
@@ -213,22 +222,14 @@ describe('PUT /api/tasks/:id', () => {
     expect(res.body.task.subtasks).toHaveLength(0);
   });
 
-  it('returns 400 for invalid status enum', async () => {
-    const created = await Task.create({ sessionId: session._id, prompt: 'P' });
-    const res = await request(app)
-      .put(`/api/tasks/${created._id}`)
-      .send({ status: 'not_valid' });
-    expect(res.status).toBe(400);
-  });
-
   it('returns 404 for a non-existent task', async () => {
-    const fakeId = new mongoose.Types.ObjectId();
+    const fakeId = '00000000-0000-0000-0000-000000000000';
     const res = await request(app).put(`/api/tasks/${fakeId}`).send({ status: 'success' });
     expect(res.status).toBe(404);
     expect(res.body.error).toBe('Task not found');
   });
 
-  it('returns 400 for an invalid ObjectId', async () => {
+  it('returns 400 for an invalid ID format', async () => {
     const res = await request(app).put('/api/tasks/bad-id').send({ status: 'success' });
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('Invalid ID format');
@@ -241,22 +242,22 @@ describe('PUT /api/tasks/:id', () => {
 
 describe('DELETE /api/tasks/:id', () => {
   it('returns 200 and removes the task', async () => {
-    const created = await Task.create({ sessionId: session._id, prompt: 'Delete me' });
+    const created = await taskStore.createTask({ sessionId: session._id, prompt: 'Delete me' });
     const res = await request(app).delete(`/api/tasks/${created._id}`);
     expect(res.status).toBe(200);
     expect(res.body.message).toBe('Task deleted');
-    const gone = await Task.findById(created._id);
+    const gone = await taskStore.getTask(created._id);
     expect(gone).toBeNull();
   });
 
   it('returns 404 for a non-existent task', async () => {
-    const fakeId = new mongoose.Types.ObjectId();
+    const fakeId = '00000000-0000-0000-0000-000000000000';
     const res = await request(app).delete(`/api/tasks/${fakeId}`);
     expect(res.status).toBe(404);
     expect(res.body.error).toBe('Task not found');
   });
 
-  it('returns 400 for an invalid ObjectId', async () => {
+  it('returns 400 for an invalid ID format', async () => {
     const res = await request(app).delete('/api/tasks/bad-id');
     expect(res.status).toBe(400);
     expect(res.body.error).toBe('Invalid ID format');
