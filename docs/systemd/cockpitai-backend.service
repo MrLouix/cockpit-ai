@@ -1,0 +1,19 @@
+[Unit]
+Description=CockpitAI Backend API Server
+After=network.target
+Documentation=https://github.com/MrLouix/cockpitAI
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ai_agent/projects/cockpitAI/backend
+ExecStart=/usr/bin/node --no-warnings server.js
+Restart=on-failure
+RestartSec=5
+Environment=MONGODB_URI=mongodb://100.71.107.100:27017/cockpitai
+Environment=PORT=3331
+Environment=NODE_ENV=production
+StandardOutput=append:/home/ai_agent/projects/cockpitAI/logs/backend.log
+StandardError=append:/home/ai_agent/projects/cockpitAI/logs/backend-error.log
+
+[Install]
+WantedBy=default.target

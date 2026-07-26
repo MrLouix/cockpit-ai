@@ -1,0 +1,18 @@
+[Unit]
+Description=CockpitAI Frontend - React/Vite Dashboard
+After=network.target
+Documentation=https://github.com/MrLouix/cockpitAI
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ai_agent/projects/cockpitAI/frontend
+ExecStart=/usr/bin/npx vite --port 3333 --host 0.0.0.0
+Restart=on-failure
+RestartSec=5
+Environment=NODE_ENV=production
+Environment=PORT=3333
+StandardOutput=append:/home/ai_agent/projects/cockpitAI/logs/frontend.log
+StandardError=append:/home/ai_agent/projects/cockpitAI/logs/frontend-error.log
+
+[Install]
+WantedBy=default.target
