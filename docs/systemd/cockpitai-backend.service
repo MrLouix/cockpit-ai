@@ -9,7 +9,7 @@ WorkingDirectory=/home/ai_agent/projects/cockpitAI/backend
 ExecStart=/usr/bin/node --no-warnings server.js
 Restart=on-failure
 RestartSec=5
-Environment=MONGODB_URI=mongodb://100.71.107.100:27017/cockpitai
+Environment=REDIS_URL=redis://localhost:6379
 Environment=PORT=3331
 Environment=NODE_ENV=production
 StandardOutput=append:/home/ai_agent/projects/cockpitAI/logs/backend.log

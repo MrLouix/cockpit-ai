@@ -9,10 +9,9 @@ WorkingDirectory=/home/ai_agent/projects/cockpitAI/engine
 ExecStart=/usr/bin/node --no-warnings runEngine.js
 Restart=on-failure
 RestartSec=5
-Environment=MONGODB_URI=mongodb://100.71.107.100:27017/cockpitai
-Environment=POLL_INTERVAL=5000
-Environment=DEFAULT_TIMEOUT=300000
+Environment=REDIS_URL=redis://localhost:6379
 Environment=ENGINE_PORT=3332
+Environment=WORKER_CONCURRENCY=5
 Environment=NODE_ENV=production
 StandardOutput=append:/home/ai_agent/projects/cockpitAI/logs/engine.log
 StandardError=append:/home/ai_agent/projects/cockpitAI/logs/engine-error.log
